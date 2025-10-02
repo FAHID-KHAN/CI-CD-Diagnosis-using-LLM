@@ -1,0 +1,19 @@
+evaluation:
+  test_data_path: "data/benchmark/annotated_test_set.json"
+  output_dir: "results/evaluation"
+  
+baseline:
+  methods: ["regex", "heuristic"]
+  
+ablation:
+  filtering:
+    strategies: [false, 500, 1000, 2000]
+  temperature:
+    values: [0.0, 0.1, 0.3, 0.5, 0.7, 1.0]
+  
+metrics:
+  - precision
+  - recall
+  - f1_score
+  - accuracy
+  - hallucination_rate

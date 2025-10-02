@@ -1,0 +1,21 @@
+rag:
+  vector_db_path: "chroma_db"
+  embedding_model: "all-MiniLM-L6-v2"
+  
+documentation_sources:
+  - npm
+  - maven
+  - pip
+  - docker
+  - github_actions
+  - gradle
+  - pytest
+  - jest
+  
+scraping:
+  max_pages_per_source: 50
+  chunk_size: 500
+  
+retrieval:
+  n_results: 5
+  score_threshold: 0.7
