@@ -1,0 +1,125 @@
+# llm_service.py - LLM integration for diagnosis
+
+import asyncio
+import json
+import logging
+import re
+from typing import Any, Dict, Optional
+
+import anthropic
+import openai
+
+from src.api.models import LLMProvider
+
+logger = logging.getLogger(__name__)
+
+MAX_LLM_RETRIES = 3
+LLM_BACKOFF = 2.0
+
+SYSTEM_MESSAGE = "You are an expert DevOps engineer."
+
+DIAGNOSIS_PROMPT = """You are an expert DevOps engineer analyzing CI/CD pipeline failures.
+
+Analyze the following build log and provide a detailed diagnosis.
+
+CRITICAL REQUIREMENTS:
+1. You MUST cite exact log lines (with line numbers) as evidence
+2. Every claim must reference specific lines from the log
+3. Identify the root cause, not just symptoms
+4. Provide actionable fix suggestions
+
+LOG CONTENT:
+{log_content}
+
+Respond in JSON format:
+{{
+    "error_type": "dependency_error|test_failure|build_configuration|timeout|permission_denied|syntax_error|network_error|unknown",
+    "failure_lines": [line numbers where errors occur],
+    "root_cause": "Clear explanation of the underlying issue",
+    "suggested_fix": "Specific, actionable steps to resolve the issue",
+    "confidence_score": 0.0-1.0,
+    "grounded_evidence": [
+        {{"line_number": X, "content": "exact line content", "is_error": true}}
+    ],
+    "reasoning": "Step-by-step analysis leading to this diagnosis"
+}}"""
+
+
+class LLMDiagnoser:
+    """Thin wrapper around OpenAI / Anthropic for CI/CD log diagnosis."""
+
+    def __init__(
+        self,
+        provider: LLMProvider,
+        model: str,
+        api_key: Optional[str] = None,
+        max_tokens: int = 4096,
+    ):
+        self.provider = provider
+        self.model = model
+        self.max_tokens = max_tokens
+
+        # Build a reusable client once (instead of per-request)
+        if provider == LLMProvider.OPENAI:
+            self._openai = openai.AsyncOpenAI(api_key=api_key)
+        elif provider == LLMProvider.ANTHROPIC:
+            self._anthropic = anthropic.AsyncAnthropic(api_key=api_key)
+
+    # -- public ----------------------------------------------------------
+
+    def create_prompt(self, log_content: str) -> str:
+        return DIAGNOSIS_PROMPT.format(log_content=log_content)
+
+    async def diagnose(self, log_content: str, temperature: float = 0.1) -> Dict[str, Any]:
+        prompt = self.create_prompt(log_content)
+
+        for attempt in range(MAX_LLM_RETRIES):
+            try:
+                if self.provider == LLMProvider.OPENAI:
+                    return await self._diagnose_openai(prompt, temperature)
+                elif self.provider == LLMProvider.ANTHROPIC:
+                    return await self._diagnose_anthropic(prompt, temperature)
+                else:
+                    raise ValueError(f"Unsupported LLM provider: {self.provider}")
+            except (openai.RateLimitError, anthropic.RateLimitError) as exc:
+                wait = LLM_BACKOFF ** attempt
+                logger.warning("Rate-limited (attempt %d/%d), retrying in %.1fs: %s",
+                               attempt + 1, MAX_LLM_RETRIES, wait, exc)
+                await asyncio.sleep(wait)
+            except (openai.APIConnectionError, anthropic.APIConnectionError) as exc:
+                wait = LLM_BACKOFF ** attempt
+                logger.warning("Connection error (attempt %d/%d), retrying in %.1fs: %s",
+                               attempt + 1, MAX_LLM_RETRIES, wait, exc)
+                await asyncio.sleep(wait)
+
+        # Final attempt without catching
+        if self.provider == LLMProvider.OPENAI:
+            return await self._diagnose_openai(prompt, temperature)
+        return await self._diagnose_anthropic(prompt, temperature)
+
+    # -- private ---------------------------------------------------------
+
+    async def _diagnose_openai(self, prompt: str, temperature: float) -> Dict[str, Any]:
+        response = await self._openai.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": SYSTEM_MESSAGE},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=temperature,
+            response_format={"type": "json_object"},
+        )
+        return json.loads(response.choices[0].message.content)
+
+    async def _diagnose_anthropic(self, prompt: str, temperature: float) -> Dict[str, Any]:
+        response = await self._anthropic.messages.create(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            temperature=temperature,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        content = response.content[0].text
+        json_match = re.search(r'\{.*\}', content, re.DOTALL)
+        if json_match:
+            return json.loads(json_match.group())
+        return json.loads(content)

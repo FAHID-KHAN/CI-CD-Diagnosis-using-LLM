@@ -1,18 +1,40 @@
 # data_collection.py - Tools for collecting and annotating CI/CD logs
 
-import requests
-import json
 import io
-
-import time  # Add this import
-
+import json
+import logging
+import re
 import sqlite3
-from typing import List, Dict, Optional
+import time
+import zipfile
 from dataclasses import dataclass, asdict
 from datetime import datetime
-import re
 from pathlib import Path
-import zipfile
+from typing import Dict, List, Optional
+
+import requests
+
+logger = logging.getLogger(__name__)
+
+
+def _request_with_retry(method: str, url: str, max_retries: int = 3, backoff: float = 2.0, **kwargs) -> requests.Response:
+    """HTTP request with exponential backoff on transient failures."""
+    last_exc = None
+    for attempt in range(max_retries):
+        try:
+            resp = requests.request(method, url, **kwargs)
+            if resp.status_code in (429, 502, 503):
+                wait = backoff ** attempt
+                logger.warning("HTTP %d from %s, retrying in %.1fs", resp.status_code, url, wait)
+                time.sleep(wait)
+                continue
+            return resp
+        except requests.RequestException as exc:
+            last_exc = exc
+            wait = backoff ** attempt
+            logger.warning("Request error (%s), retrying in %.1fs", exc, wait)
+            time.sleep(wait)
+    raise last_exc or RuntimeError("request_with_retry exhausted")
 
 @dataclass
 class LogAnnotation:
@@ -52,11 +74,11 @@ class GitHubActionsCollector:
             "per_page": min(max_results, 100)
         }
         try:
-            response = requests.get(url, headers=self.headers, params=params, timeout=15)
+            response = _request_with_retry("GET", url, headers=self.headers, params=params, timeout=15)
             if response.status_code == 200:
                 repos = response.json()['items']
         except Exception as e:
-            print(f"Error searching repositories: {e}")
+            logger.error("Error searching repositories: %s", e)
         return repos
     
     def collect_logs_from_repo(self, owner: str, repo: str, num_logs: int = 50) -> List[Dict]:
@@ -78,7 +100,7 @@ class GitHubActionsCollector:
                     'created_at': run.get('created_at', ''),
                     'url': run.get('html_url', '')
                 })
-                print(f"Collected log {len(collected_logs)}/{num_logs}")
+                logger.info("Collected log %d/%d", len(collected_logs), num_logs)
             time.sleep(1)
         return collected_logs
     def get_workflow_runs(self, owner: str, repo: str, 
@@ -94,7 +116,7 @@ class GitHubActionsCollector:
         while len(runs) < max_runs:
             params['page'] = page
             try:
-                response = requests.get(url, headers=self.headers, params=params, timeout=15)
+                response = _request_with_retry("GET", url, headers=self.headers, params=params, timeout=15)
                 if response.status_code == 200:
                     data = response.json()['workflow_runs']
                     if not data:
@@ -106,28 +128,30 @@ class GitHubActionsCollector:
                 else:
                     break
             except Exception as e:
-                print(f"Error fetching workflow runs: {e}")
+                logger.error("Error fetching workflow runs: %s", e)
                 break
         return runs[:max_runs]
     
     def download_log(self, owner: str, repo: str, run_id: int) -> Optional[str]:
-        """Download workflow log"""
+        """Download workflow log (reads ALL files from the ZIP archive)"""
         url = f"{self.base_url}/repos/{owner}/{repo}/actions/runs/{run_id}/logs"
         try:
-            response = requests.get(url, headers=self.headers, timeout=30)
+            response = _request_with_retry("GET", url, headers=self.headers, timeout=30)
             if response.status_code == 200:
-                # GitHub returns logs as ZIP - need to decompress
                 try:
                     with zipfile.ZipFile(io.BytesIO(response.content)) as z:
-                        file_list = z.namelist()
-                        if file_list:
-                            with z.open(file_list[0]) as f:
-                                return f.read().decode('utf-8', errors='ignore')
+                        parts = []
+                        for name in sorted(z.namelist()):
+                            if name.endswith('/'):
+                                continue
+                            with z.open(name) as f:
+                                content = f.read().decode('utf-8', errors='ignore')
+                                parts.append(f"=== {name} ===\n{content}")
+                        return "\n".join(parts) if parts else None
                 except Exception:
-                    # If not a ZIP, return as-is
                     return response.text
         except Exception as e:
-            print(f"Error downloading log for {owner}/{repo} run {run_id}: {e}")
+            logger.error("Error downloading log for %s/%s run %d: %s", owner, repo, run_id, e)
         return None
     
     def collect_logs(self, num_logs: int = 500) -> List[Dict]:
@@ -155,8 +179,8 @@ class GitHubActionsCollector:
                         'created_at': run.get('created_at', ''),
                         'url': run.get('html_url', '')
                     })
-                    print(f"Collected log {len(collected_logs)}/{num_logs}")
-                time.sleep(1)  # Sleep to avoid rate limits
+                    logger.info("Collected log %d/%d", len(collected_logs), num_logs)
+                time.sleep(1)
         return collected_logs
 
 class BugSwarmCollector:
@@ -323,7 +347,7 @@ class LogAnnotationTool:
         with open(output_path, 'w') as f:
             json.dump(annotations, f, indent=2)
         
-        print(f"Exported {len(annotations)} annotations to {output_path}")
+        logger.info("Exported %d annotations to %s", len(annotations), output_path)
     
     def get_statistics(self) -> Dict:
         """Get annotation statistics"""
@@ -426,4 +450,4 @@ if __name__ == "__main__":
     
     annotation_tool.save_annotation(example_annotation)
     stats = annotation_tool.get_statistics()
-    print(f"Annotation statistics: {stats}")
+    logger.info("Annotation statistics: %s", stats)

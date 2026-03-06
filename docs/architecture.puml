@@ -1,0 +1,86 @@
+@startuml ArchitectureDiagram
+title CI/CD Diagnosis — Architecture
+skinparam packageStyle rectangle
+
+package "Sources" {
+  [GitHub API / BugSwarm / Manual Upload] as Sources
+}
+
+package "Collection" {
+  [scripts/data_collection.py] as ScriptsDC
+  [src/data_collection/GitHubActionsCollector] as Collector
+}
+
+package "Storage" {
+  [data/raw_logs (JSON)] as RawLogs
+  [data/annotated_logs] as Annotated
+  [chroma_db (vector DB)] as ChromaDB
+}
+
+package "Diagnostic Engine" {
+  [src/api/main.py\n(FastAPI)] as API
+  [LogFilter] as Filter
+  [LLMDiagnoser\n(OpenAI / Anthropic)] as LLM
+  [src/rag/rag_system.py\n(VectorStore / Scraper)] as RAG
+  [GroundingVerifier] as Verifier
+}
+
+package "Orchestration Scripts" {
+  [scripts/diagnose_logs.py] as DiagnoseScript
+  [scripts/data_collection.py] as CollectorScript
+}
+
+package "Evaluation & Study" {
+  [src/evaluation/evaluation.py] as Eval
+  [src/human_study/human_study.py\n(Flask UI)] as Study
+  [results] as Results
+}
+
+actor "Study Participants" as Users
+
+' Flows
+Sources --> ScriptsDC : search / download
+ScriptsDC --> Collector
+Collector --> RawLogs
+
+RawLogs --> DiagnoseScript
+DiagnoseScript --> API : POST /diagnose
+
+API --> Filter
+Filter --> LLM
+LLM --> Verifier
+Verifier --> Annotated
+
+API --> RAG
+RAG --> ChromaDB
+RAG --> LLM
+
+Annotated --> Eval
+Eval --> Results
+
+Annotated --> Study
+Study --> Results
+Study --> Users
+
+' Entry points
+note right of ScriptsDC
+  Entry: scripts/data_collection.py
+  (wrapper for collectors)
+end note
+
+note right of DiagnoseScript
+  Entry: scripts/diagnose_logs.py
+  (posts logs to /diagnose)
+end note
+
+note right of API
+  Entry: src/api/main.py
+  Run: uvicorn src.api.main:app --reload
+end note
+
+note right of Study
+  Entry: src/human_study/human_study.py
+  Run: python -m src.human_study.human_study start 5000
+end note
+
+@enduml
