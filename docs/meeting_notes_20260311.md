@@ -1,8 +1,9 @@
-# Next Steps — Post-Meeting 11 March 2026
+# Meeting Notes — 11 March 2026
 
-**Meeting:** Fahid Khan, Jussi Rasku (supervisor), Mahade Hasan (advisor)
+**Meeting:** Thesis Meeting — Fahid Khan
+**Participants:** Fahid Khan, Jussi Rasku (supervisor), Mahade Hasan (advisor)
 **Duration:** 43 minutes
-**Next meeting:** 25 March 2026 (calendar invite to be sent with agenda + OneDrive link)
+**Next meeting:** 25 March 2026
 
 ---
 
@@ -12,8 +13,8 @@
 
 | | Question | Status |
 |---|---|---|
-| **Primary RQ** | How effectively can LLMs automate the diagnosis of CI/CD pipeline failure causes and assist developers? | Approved — keep as-is |
-| **Sub-RQ1** | How well can LLMs interpret CI/CD pipeline logs to identify underlying causes of failures? | Approved — very close to primary RQ, straightforward to answer |
+| **Primary RQ** | How effectively can LLMs automate the diagnosis of CI/CD pipeline failure causes and assist developers? | Approved |
+| **Sub-RQ1** | How well can LLMs interpret CI/CD pipeline logs to identify underlying causes of failures? | Approved — close to primary RQ, straightforward |
 | **Sub-RQ2** | How feasible is it to integrate an LLM-based diagnostic system into CI/CD tools (Jenkins, GitHub Actions) in real-world scenarios? | **Problematic — needs rework** |
 
 ### The RQ2 problem
@@ -37,17 +38,11 @@ Jussi shared an IEEE article on feasibility studies and recommended searching Go
 
 **Decision:** Try Option A first. Fall back to Option B if feasibility study proves too difficult.
 
-### Action
-
-- [ ] Research feasibility study methodology in academic SE literature
-- [ ] Look at how existing feasibility study papers are structured (method, questions asked, data collected)
-- [ ] Draft revised RQ2 and bring to next meeting (March 25)
-
 ---
 
-## 2. Multi-LLM Comparison (Required Regardless of RQ2 Choice)
+## 2. Multi-LLM Comparison (Required Regardless of RQ2)
 
-Mahade was clear: **using only one GPT model has no novelty.** "You can do it with ChatGPT as well — there is no novelty."
+Mahade was clear: **using only one GPT model has no novelty.** *"You can do it with ChatGPT as well — there is no novelty."*
 
 Regardless of which RQ2 direction is chosen, the evaluation must include **multiple LLMs**:
 
@@ -57,21 +52,15 @@ Regardless of which RQ2 direction is chosen, the evaluation must include **multi
 
 This satisfies RQ1 (which LLM performs better at diagnosis) and provides data for either RQ2 formulation.
 
-### Action
-
-- [ ] Identify 2–3 candidate open-source models that can handle long-context log inputs
-- [ ] Add model selection parameter to diagnosis pipeline (already partially supported via `--model` flag)
-- [ ] Run the same log set through each model and collect results
-
 ---
 
 ## 3. Evaluation Design
 
-Mahade framed the evaluation clearly: **"You have a question, you write your answers, the teacher checks it against the correct answers."**
+Mahade framed the evaluation: *"You have a question, you write your answers, the teacher checks it against the correct answers."*
 
 ### Required components
 
-1. **Golden standard (ground truth)** — Created by a domain expert (you, from your work experience). For each log: the correct error type, root cause, and recommended fix.
+1. **Golden standard (ground truth)** — Created by a domain expert (you). For each log: correct error type, root cause, and recommended fix.
 2. **LLM output** — The system's diagnosis for the same log.
 3. **Evaluation criteria** — Metrics to compare LLM output against ground truth:
    - Error type accuracy
@@ -80,17 +69,11 @@ Mahade framed the evaluation clearly: **"You have a question, you write your ans
    - Confidence calibration (does the model know when it's wrong?)
 4. **Baseline comparison** — Regex-based and heuristic baselines already exist in the pipeline.
 
-### Action
-
-- [ ] Finalise evaluation criteria and metrics
-- [ ] Create golden standard annotations for the 52 diagnosed logs (or a representative subset)
-- [ ] Design evaluation to work across multiple LLMs
-
 ---
 
 ## 4. Current Progress Acknowledged
 
-Both supervisors confirmed the following work is done and solid:
+Both supervisors confirmed these are done and solid:
 
 | Step | Status |
 |---|---|
@@ -99,7 +82,7 @@ Both supervisors confirmed the following work is done and solid:
 | Single-LLM diagnosis pipeline | Done |
 | Basic evaluation framework | In place, needs refinement |
 
-Mahade: *"Now LLM has a clear context."* — The filtering and context enrichment work is complete.
+Mahade: *"Now LLM has a clear context."*
 
 ---
 
@@ -108,26 +91,26 @@ Mahade: *"Now LLM has a clear context."* — The filtering and context enrichmen
 ### Template and tools
 
 - **Template:** TAU ITC CS template (2019) — confirmed correct by Jussi
-- **Bibliography:** Use **Zotero** (TAU-recommended) or Mendeley. Install browser plugin + Word plugin. Collect every paper you read.
-- **OneDrive:** Share thesis folder with Jussi and Mahade. Put the link in the calendar invite for the next meeting.
+- **Bibliography:** Use **Zotero** (TAU-recommended) or Mendeley. Install browser plugin + Word plugin.
+- **OneDrive:** Share thesis folder with Jussi and Mahade. Put the link in the calendar invite.
 
 ### Writing order (from Jussi)
 
-Do NOT write the thesis start-to-end. Recommended order:
+Do NOT write start-to-end. Recommended order:
 
-1. **Empirical work** — Describe the artefact, experiments, results (you have most of this)
+1. **Empirical work** — Describe the artefact, experiments, results
 2. **Research methods** — DSR methodology, evaluation design
 3. **Background/Theory** — Related work, CI/CD concepts, LLM background
 4. **Introduction** — Frame the research gap, motivation, RQs
-5. **Discussion** — What do results mean? How does this compare to prior work?
+5. **Discussion** — What do results mean? Comparison to prior work
 6. **Conclusions** — So what? Who should care?
 7. **Abstract** — Write this LAST
 
-### Writing approach: Literate programming style
+### Writing approach
 
-Jussi recommended outlining each section in plain language first (*"here I will discuss X, then I will show Y"*) before writing the actual academic text. This keeps focus on what each paragraph needs to communicate.
+**Literate programming style:** Outline each section in plain language first (*"here I will discuss X, then I will show Y"*) before writing academic text. Keeps focus on what each paragraph communicates.
 
-### Abstraction U-shape
+**Abstraction U-shape:**
 
 ```
 Introduction  ████████████████  (general — motivation, gap)
@@ -138,15 +121,15 @@ Discussion    ████████████      (back to moderately gene
 Conclusions   ████████████████  (general — so what?)
 ```
 
-Same pattern applies within chapters and even within paragraphs: first sentence = topic (general), middle = details (specific), last sentence = bridge to next paragraph (general).
+Same pattern applies within chapters and within paragraphs: first sentence = topic (general), middle = details (specific), last sentence = bridge to next paragraph (general).
 
 ### AI usage warning
 
-Jussi explicitly warned: *"AI has this tendency to produce something that superficially looks like academic text, but then it lacks the coherence and clarity of thought."* Every sentence must carry meaning — no filler, no surface-level academic phrasing without substance.
+Jussi: *"AI has this tendency to produce something that superficially looks like academic text, but then it lacks the coherence and clarity of thought."* Every sentence must carry meaning.
 
 ---
 
-## 6. Administrative
+## 6. Administrative Actions
 
 - [ ] Set up **OneDrive** folder, share with Jussi and Mahade
 - [ ] Install **Zotero** (browser plugin + Word plugin), start collecting papers
@@ -157,7 +140,7 @@ Jussi explicitly warned: *"AI has this tendency to produce something that superf
 
 ---
 
-## Task Checklist (Priority Order)
+## 7. Task Checklist
 
 ### Before next meeting (March 25)
 
@@ -169,7 +152,7 @@ Jussi explicitly warned: *"AI has this tendency to produce something that superf
 - [ ] Send calendar invite with agenda + OneDrive link
 - [ ] Start writing the empirical/artefact chapter (describe the system, pipeline, filtering)
 
-### Near-term (after March 25)
+### Near-term
 
 - [ ] Run multi-LLM experiments on the same log set
 - [ ] Create golden standard annotations (domain expert evaluation)
@@ -179,4 +162,4 @@ Jussi explicitly warned: *"AI has this tendency to produce something that superf
 ### Ongoing
 
 - [ ] Continue thesis writing following the recommended order
-- [ ] Collect and organise papers in Zotero as you read them
+- [ ] Collect and organise papers in Zotero
