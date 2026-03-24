@@ -73,6 +73,15 @@ make annotate    # 5. Manually annotate ground truth
 make evaluate    # 6. Generate evaluation report & charts
 ```
 
+Or use the all-in-one bash script:
+
+```bash
+./run_workflow.sh                          # Full pipeline
+./run_workflow.sh --skip-collect --from 4  # Re-diagnose existing logs
+./run_workflow.sh --skip-annotate          # Non-interactive (reuse ground truth)
+./run_workflow.sh --only 7                 # Just regenerate evaluation
+```
+
 Run `make help` to see all available commands.
 
 ## Diagnose a Single Log
@@ -87,6 +96,9 @@ response = requests.post(
         "provider": "openai",
         "model": "gpt-4o-mini",
         "use_filtering": True,
+        "repository": "owner/repo",          # optional context
+        "workflow_name": "CI Tests",          # optional context
+        "ci_system": "GitHub Actions",        # optional context
     },
 )
 result = response.json()

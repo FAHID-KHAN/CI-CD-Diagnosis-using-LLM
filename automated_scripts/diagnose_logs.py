@@ -98,7 +98,11 @@ for i, log in enumerate(logs, 1):
                 'provider': args.provider,
                 'model': args.model,
                 'temperature': 0.1,
-                'use_filtering': True
+                'use_filtering': True,
+                'repository': log.get('repository', ''),
+                'workflow_name': log.get('workflow_name', ''),
+                'ci_system': 'GitHub Actions',
+                'run_url': log.get('url', ''),
             },
             timeout=60
         )

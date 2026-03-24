@@ -27,11 +27,22 @@ cp .env.template .env
 
 The pipeline has 6 steps. Use `make help` to see all commands.
 
+Alternatively, run the full pipeline with a single script:
+
+```bash
+./run_workflow.sh                          # Full 7-step pipeline
+./run_workflow.sh --skip-collect --from 3  # Skip collection, resume from triage
+./run_workflow.sh --skip-annotate          # Non-interactive (reuse ground truth)
+./run_workflow.sh --only 7                 # Just regenerate evaluation
+./run_workflow.sh --model gpt-4 --limit 10 # Custom model, limit logs
+```
+
 ### 1. Collect logs
 
 ```bash
 make collect
 # Collects failed CI/CD logs from GitHub repos
+# Backs up existing batch1.json before overwriting
 # Output: data/raw_logs/github_actions/batch1.json
 ```
 
@@ -102,6 +113,7 @@ These are loaded by `src/config.py`.
 ## Common Issues
 
 - **Empty batch1.json**: Your GitHub token may be invalid. Generate a classic token with `repo` + `workflow` scopes.
+- **Baselines show 0%**: Ground truth log IDs don't match the current raw data (likely caused by re-collecting). Re-annotate with `make annotate` to fix.
 - **API 500 errors**: Check that `OPENAI_API_KEY` is set and valid in `.env`.
 - **sentence-transformers fails**: Install `torch` first: `pip install --index-url https://download.pytorch.org/whl/cpu torch`
 - **Tests call real LLM APIs**: Tests require the API running with valid keys. Consider adding a mock provider for CI.

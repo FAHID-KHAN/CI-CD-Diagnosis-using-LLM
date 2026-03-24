@@ -21,12 +21,13 @@ SYSTEM_MESSAGE = "You are an expert DevOps engineer."
 DIAGNOSIS_PROMPT = """You are an expert DevOps engineer analyzing CI/CD pipeline failures.
 
 Analyze the following build log and provide a detailed diagnosis.
-
+{context_block}
 CRITICAL REQUIREMENTS:
 1. You MUST cite exact log lines (with line numbers) as evidence
 2. Every claim must reference specific lines from the log
 3. Identify the root cause, not just symptoms
 4. Provide actionable fix suggestions
+5. Use the context information (repository, workflow, CI system) to inform your analysis
 
 LOG CONTENT:
 {log_content}
@@ -67,11 +68,51 @@ class LLMDiagnoser:
 
     # -- public ----------------------------------------------------------
 
-    def create_prompt(self, log_content: str) -> str:
-        return DIAGNOSIS_PROMPT.format(log_content=log_content)
+    def create_prompt(
+        self,
+        log_content: str,
+        repository: str = "",
+        workflow_name: str = "",
+        ci_system: str = "",
+        run_url: str = "",
+    ) -> str:
+        # Build a context block from available metadata
+        context_lines = []
+        if repository:
+            context_lines.append(f"- Repository: {repository}")
+        if workflow_name:
+            context_lines.append(f"- Workflow: {workflow_name}")
+        if ci_system:
+            context_lines.append(f"- CI System: {ci_system}")
+        if run_url:
+            context_lines.append(f"- Run URL: {run_url}")
 
-    async def diagnose(self, log_content: str, temperature: float = 0.1) -> Dict[str, Any]:
-        prompt = self.create_prompt(log_content)
+        if context_lines:
+            context_block = "\nCONTEXT:\n" + "\n".join(context_lines) + "\n"
+        else:
+            context_block = ""
+
+        return DIAGNOSIS_PROMPT.format(
+            log_content=log_content,
+            context_block=context_block,
+        )
+
+    async def diagnose(
+        self,
+        log_content: str,
+        temperature: float = 0.1,
+        repository: str = "",
+        workflow_name: str = "",
+        ci_system: str = "",
+        run_url: str = "",
+    ) -> Dict[str, Any]:
+        prompt = self.create_prompt(
+            log_content,
+            repository=repository,
+            workflow_name=workflow_name,
+            ci_system=ci_system,
+            run_url=run_url,
+        )
 
         for attempt in range(MAX_LLM_RETRIES):
             try:

@@ -56,6 +56,28 @@ def load_raw_logs(path: str) -> dict:
     return {item["log_id"]: item for item in items}
 
 
+def build_log_content_index(*file_paths: str) -> dict:
+    """Build a merged {log_id: {log_content, ...}} index from multiple JSON files.
+
+    Searches raw logs, triaged logs, and any other source so that baselines
+    can still run even if the raw file was overwritten by a new collection.
+    """
+    index: dict = {}
+    for path in file_paths:
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path) as f:
+                items = json.load(f)
+            for item in items:
+                lid = item.get("log_id")
+                if lid and lid not in index and item.get("log_content"):
+                    index[lid] = item
+        except (json.JSONDecodeError, KeyError):
+            continue
+    return index
+
+
 # ---------------------------------------------------------------------------
 # Metrics
 # ---------------------------------------------------------------------------
@@ -94,18 +116,28 @@ def compute_llm_metrics(annotations: list) -> dict:
     }
 
 
-def compute_baseline_metrics(annotations: list, raw_logs: dict) -> dict:
-    """Run regex and heuristic baselines on the same logs, compare to ground truth."""
+def compute_baseline_metrics(annotations: list, log_index: dict) -> dict:
+    """Run regex and heuristic baselines on the same logs, compare to ground truth.
+
+    ``log_index`` is a merged dict built by ``build_log_content_index`` so that
+    we can find log content even if the original raw file was overwritten.
+    """
     results = {"regex": {"correct": 0, "total": 0}, "heuristic": {"correct": 0, "total": 0}}
+    missing_ids: list[str] = []
 
     for ann in annotations:
         log_id = ann["log_id"]
         actual_type = ann["actual_error_type"]
-        raw = raw_logs.get(log_id)
-        if not raw:
+        entry = log_index.get(log_id)
+        if not entry:
+            missing_ids.append(log_id)
             continue
 
-        content = raw.get("log_content", "")
+        content = entry.get("log_content", "")
+        if not content:
+            missing_ids.append(log_id)
+            continue
+
         results["regex"]["total"] += 1
         results["heuristic"]["total"] += 1
 
@@ -116,6 +148,13 @@ def compute_baseline_metrics(annotations: list, raw_logs: dict) -> dict:
         heur_type, _ = BaselineEvaluator.heuristic_baseline(content)
         if heur_type == actual_type:
             results["heuristic"]["correct"] += 1
+
+    if missing_ids:
+        print(f"  [WARN] Could not find raw log content for {len(missing_ids)}/{len(annotations)} annotations.")
+        print(f"         Baselines computed on {results['regex']['total']} logs only.")
+        print(f"         Missing IDs: {missing_ids[:3]}{'...' if len(missing_ids) > 3 else ''}")
+        print(f"         Tip: re-annotate after re-collecting so IDs match.")
+        print()
 
     for method in results:
         t = results[method]["total"]
@@ -311,6 +350,10 @@ def main():
         default=os.path.join(parent_dir, "data/raw_logs/github_actions/batch1.json"),
     )
     parser.add_argument(
+        "--triaged-logs",
+        default=os.path.join(parent_dir, "data/raw_logs/github_actions/batch1_triaged.json"),
+    )
+    parser.add_argument(
         "--output-dir",
         default=os.path.join(parent_dir, "results/evaluation/demonstration"),
     )
@@ -323,11 +366,12 @@ def main():
         print("  python automated_scripts/annotate.py")
         sys.exit(1)
 
-    raw_logs = load_raw_logs(args.raw_logs)
+    # Build a merged log content index from all available sources
+    log_index = build_log_content_index(args.raw_logs, args.triaged_logs)
 
     # Compute metrics
     llm_metrics = compute_llm_metrics(annotations)
-    baseline_metrics = compute_baseline_metrics(annotations, raw_logs)
+    baseline_metrics = compute_baseline_metrics(annotations, log_index)
     breakdown = compute_per_type_breakdown(annotations)
 
     # Console report

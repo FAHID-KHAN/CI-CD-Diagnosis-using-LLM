@@ -84,7 +84,14 @@ async def diagnose_log(request: DiagnosisRequest):
             max_tokens=settings.api.max_tokens,
         )
 
-        diagnosis = await diagnoser.diagnose(filtered_log, request.temperature)
+        diagnosis = await diagnoser.diagnose(
+            filtered_log,
+            temperature=request.temperature,
+            repository=request.repository,
+            workflow_name=request.workflow_name,
+            ci_system=request.ci_system,
+            run_url=request.run_url,
+        )
 
         evidence = [LogLine(**ev) for ev in diagnosis.get('grounded_evidence', [])]
         hallucination_detected, grounding_score = GroundingVerifier.verify_evidence(

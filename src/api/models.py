@@ -29,6 +29,11 @@ class DiagnosisRequest(BaseModel):
     temperature: float = Field(default=0.1, ge=0, le=2)
     use_filtering: bool = Field(default=True)
     max_context_lines: int = Field(default=500)
+    # Optional metadata for context-enriched prompts
+    repository: str = Field(default="", description="Repository name (e.g. pytorch/pytorch)")
+    workflow_name: str = Field(default="", description="CI workflow name")
+    ci_system: str = Field(default="GitHub Actions", description="CI/CD platform")
+    run_url: str = Field(default="", description="URL to the failed run")
 
 
 class LogLine(BaseModel):

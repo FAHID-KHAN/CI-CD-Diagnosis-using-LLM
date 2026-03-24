@@ -96,6 +96,16 @@ def main():
         os.makedirs(output_dir, exist_ok=True)
         output_file = os.path.join(output_dir, 'batch1.json')
 
+    # Back up existing data before overwriting so baselines survive re-collection
+    if os.path.exists(output_file):
+        from datetime import datetime as _dt
+        backup_name = output_file.replace('.json', f'_backup_{_dt.now().strftime("%Y%m%d_%H%M%S")}.json')
+        import shutil
+        shutil.copy2(output_file, backup_name)
+        logger.info("Backed up existing %s -> %s", output_file, os.path.basename(backup_name))
+        print(f"  Backed up existing data to {os.path.basename(backup_name)}")
+        print()
+
     def _save(logs, label=""):
         """Deduplicate and write to disk."""
         seen_ids = set()
