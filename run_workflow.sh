@@ -11,7 +11,7 @@
 #    5. Diagnose logs via the API (with checkpoint/resume)
 #    6. Annotate diagnosed logs (interactive ground truth)
 #    7. Run demonstration evaluation (report + charts)
-#    8. Benchmark multiple LLMs side-by-side (no API needed)
+#    8. Benchmark multiple LLMs (cost tracking + statistical tests + charts)
 #
 #  Usage:
 #    ./run_workflow.sh                 # Run full pipeline
@@ -367,7 +367,7 @@ fi
 # Step 8: Benchmark multiple LLMs
 # ══════════════════════════════════════════════════════════════════════════
 if should_run 8; then
-    banner 8 "Benchmark Multiple LLMs"
+    banner 8 "Benchmark Multiple LLMs (Cost + Stats)"
 
     if [[ "${SKIP_BENCHMARK}" == true ]]; then
         warn "Skipping benchmark (--skip-benchmark)."
@@ -389,9 +389,17 @@ if should_run 8; then
             info "Using ground truth for accuracy scoring."
         fi
 
-        info "Running multi-model benchmark..."
+        info "Running multi-model benchmark (with cost tracking & statistical tests)..."
         python automated_scripts/benchmark_models.py "${BENCHMARK_ARGS[@]}"
         success "Benchmark complete. Results saved to results/benchmark/."
+
+        # Show generated artifacts
+        LATEST_BENCH_DIR=$(find "${PROJECT_DIR}/results/benchmark" -name "comparison_report.json" -type f 2>/dev/null | sort | tail -1 | xargs dirname 2>/dev/null || true)
+        if [[ -n "${LATEST_BENCH_DIR}" ]]; then
+            echo ""
+            info "Benchmark artifacts:"
+            ls -1 "${LATEST_BENCH_DIR}" 2>/dev/null | sed 's/^/    /'
+        fi
     fi
 else
     info "Skipping step 8 (benchmark)."
@@ -432,6 +440,14 @@ if [[ -n "${LATEST_BENCH}" ]]; then
     BENCH_TS=$(basename "${BENCH_DIR}")
     NUM_MODELS=$(python3 -c "import json; print(len(json.load(open('${LATEST_BENCH}'))['models']))" 2>/dev/null || echo "?")
     echo -e "  ${GREEN}[exists]${NC} Benchmark (${NUM_MODELS} models, ${BENCH_TS}) - ${LATEST_BENCH#${PROJECT_DIR}/}"
+
+    # Show statistical tests and chart if generated
+    if [[ -f "${BENCH_DIR}/statistical_tests.json" ]]; then
+        echo -e "  ${GREEN}[exists]${NC} Statistical tests - ${BENCH_DIR#${PROJECT_DIR}/}/statistical_tests.json"
+    fi
+    if [[ -f "${BENCH_DIR}/cost_accuracy_tradeoff.png" ]]; then
+        echo -e "  ${GREEN}[exists]${NC} Cost-accuracy chart - ${BENCH_DIR#${PROJECT_DIR}/}/cost_accuracy_tradeoff.png"
+    fi
 else
     echo -e "  ${RED}[missing]${NC} Benchmark results - results/benchmark/"
 fi

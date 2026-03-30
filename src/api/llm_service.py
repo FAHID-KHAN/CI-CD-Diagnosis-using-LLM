@@ -16,6 +16,17 @@ logger = logging.getLogger(__name__)
 MAX_LLM_RETRIES = 3
 LLM_BACKOFF = 2.0
 
+# ── Per-token pricing (USD) ────────────────────────────────────────────
+# Source: https://openai.com/api/pricing  /  https://docs.anthropic.com/
+# Update these when pricing changes.
+PRICING = {
+    "gpt-4o-mini":          {"input": 0.15 / 1_000_000, "output": 0.60 / 1_000_000},
+    "gpt-4o":               {"input": 2.50 / 1_000_000, "output": 10.0 / 1_000_000},
+    "gpt-3.5-turbo":        {"input": 0.50 / 1_000_000, "output": 1.50 / 1_000_000},
+    "claude-3-haiku-20240307":  {"input": 0.25 / 1_000_000, "output": 1.25 / 1_000_000},
+    "claude-3-sonnet-20240229": {"input": 3.00 / 1_000_000, "output": 15.0 / 1_000_000},
+}
+
 SYSTEM_MESSAGE = "You are an expert DevOps engineer."
 
 DIAGNOSIS_PROMPT = """You are an expert DevOps engineer analyzing CI/CD pipeline failures.
@@ -63,6 +74,9 @@ class LLMDiagnoser:
         self.provider = provider
         self.model = model
         self.max_tokens = max_tokens
+
+        # Token usage from the most recent call
+        self.last_usage: Dict[str, Any] = {}
 
         # Build a reusable client once (instead of per-request)
         if provider == LLMProvider.OPENAI:
@@ -154,6 +168,14 @@ class LLMDiagnoser:
 
     # -- private ---------------------------------------------------------
 
+    def _compute_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
+        """Compute estimated USD cost for the most recent call."""
+        rates = PRICING.get(self.model, {})
+        return (
+            prompt_tokens * rates.get("input", 0)
+            + completion_tokens * rates.get("output", 0)
+        )
+
     async def _diagnose_openai(self, prompt: str, temperature: float) -> Dict[str, Any]:
         response = await self._openai.chat.completions.create(
             model=self.model,
@@ -164,6 +186,15 @@ class LLMDiagnoser:
             temperature=temperature,
             response_format={"type": "json_object"},
         )
+        usage = response.usage
+        pt = usage.prompt_tokens if usage else 0
+        ct = usage.completion_tokens if usage else 0
+        self.last_usage = {
+            "prompt_tokens": pt,
+            "completion_tokens": ct,
+            "total_tokens": pt + ct,
+            "estimated_cost_usd": self._compute_cost(pt, ct),
+        }
         return json.loads(response.choices[0].message.content)
 
     async def _diagnose_anthropic(self, prompt: str, temperature: float) -> Dict[str, Any]:
@@ -173,6 +204,15 @@ class LLMDiagnoser:
             temperature=temperature,
             messages=[{"role": "user", "content": prompt}],
         )
+        usage = response.usage
+        pt = usage.input_tokens if usage else 0
+        ct = usage.output_tokens if usage else 0
+        self.last_usage = {
+            "prompt_tokens": pt,
+            "completion_tokens": ct,
+            "total_tokens": pt + ct,
+            "estimated_cost_usd": self._compute_cost(pt, ct),
+        }
         content = response.content[0].text
         json_match = re.search(r'\{.*\}', content, re.DOTALL)
         if json_match:
@@ -193,6 +233,15 @@ class LLMDiagnoser:
             ],
             temperature=temperature,
         )
+        usage = response.usage
+        pt = usage.prompt_tokens if usage else 0
+        ct = usage.completion_tokens if usage else 0
+        self.last_usage = {
+            "prompt_tokens": pt,
+            "completion_tokens": ct,
+            "total_tokens": pt + ct,
+            "estimated_cost_usd": 0.0,  # Local models have no API cost
+        }
         content = response.choices[0].message.content
         json_match = re.search(r'\{.*\}', content, re.DOTALL)
         if json_match:

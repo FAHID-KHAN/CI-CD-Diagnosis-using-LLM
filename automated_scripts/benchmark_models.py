@@ -44,6 +44,11 @@ load_dotenv(os.path.join(parent_dir, ".env"))
 from src.api.llm_service import LLMDiagnoser
 from src.api.models import LLMProvider
 from src.api.filtering import LogFilter
+from src.evaluation.evaluation import (
+    PredictionResult,
+    StatisticalTests,
+    Visualizer,
+)
 
 
 # ── Default model configurations ──────────────────────────────────────────
@@ -164,6 +169,7 @@ async def benchmark_model(provider, model, logs, temperature, max_tokens):
         )
 
         if diagnosis:
+            usage = diagnoser.last_usage
             results.append({
                 "log_id": log_id,
                 "repository": repo,
@@ -176,6 +182,10 @@ async def benchmark_model(provider, model, logs, temperature, max_tokens):
                 "reasoning": diagnosis.get("reasoning", ""),
                 "execution_time_ms": elapsed_ms,
                 "hallucination_detected": False,  # grounding done separately
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+                "completion_tokens": usage.get("completion_tokens", 0),
+                "total_tokens": usage.get("total_tokens", 0),
+                "cost_usd": usage.get("estimated_cost_usd", 0.0),
             })
             conf = diagnosis.get("confidence_score", 0)
             print(f"OK  {diagnosis.get('error_type','?')} ({conf:.0%}) [{elapsed_ms:.0f}ms]")
@@ -203,6 +213,11 @@ def compute_model_metrics(results, ground_truth=None):
         "avg_confidence": round(avg_confidence, 3),
         "avg_execution_time_ms": round(avg_time, 1),
         "error_type_distribution": error_dist,
+        "total_tokens": sum(r.get("total_tokens", 0) for r in results),
+        "total_cost_usd": round(sum(r.get("cost_usd", 0) for r in results), 6),
+        "cost_per_diagnosis_usd": round(
+            sum(r.get("cost_usd", 0) for r in results) / n, 6
+        ),
     }
 
     # If ground truth is available, compute accuracy
@@ -234,16 +249,19 @@ def print_comparison_table(all_metrics):
     print("  BENCHMARK COMPARISON")
     print("=" * 80)
 
-    header = f"  {'Model':<35} {'Logs':>5} {'Accuracy':>9} {'Confidence':>11} {'Avg Time':>10}"
+    header = f"  {'Model':<35} {'Logs':>5} {'Accuracy':>9} {'Confidence':>11} {'Avg Time':>10} {'Cost':>10}"
     print(header)
-    print("  " + "-" * 76)
+    print("  " + "-" * 86)
 
     for model_label, m in all_metrics.items():
         acc = m.get("error_type_accuracy")
         acc_str = f"{acc:.1%}" if acc is not None else "N/A"
+        cost = m.get("total_cost_usd", 0)
+        cost_str = f"${cost:.4f}" if cost else "$0 (local)"
         print(
             f"  {model_label:<35} {m['total_logs']:>5} {acc_str:>9} "
             f"{m['avg_confidence']:>10.1%} {m['avg_execution_time_ms']:>8.0f}ms"
+            f" {cost_str:>10}"
         )
 
     print("=" * 80)
@@ -335,6 +353,89 @@ async def main():
         json.dump(report, f, indent=2)
 
     print_comparison_table(all_metrics)
+
+    # ── Statistical tests (when 2+ models and ground truth) ───────────
+    model_labels = list(all_results.keys())
+    if ground_truth and len(model_labels) >= 2:
+        gt_map = {a["log_id"]: a for a in ground_truth}
+
+        def _to_preds(results_list):
+            preds = []
+            for r in results_list:
+                gt = gt_map.get(r["log_id"])
+                if gt:
+                    preds.append(PredictionResult(
+                        log_id=r["log_id"],
+                        predicted_error_type=r["error_type"],
+                        actual_error_type=gt["actual_error_type"],
+                        predicted_lines=[], actual_lines=[],
+                        confidence=r["confidence_score"],
+                        hallucination_detected=r.get("hallucination_detected", False),
+                        execution_time_ms=r["execution_time_ms"],
+                        cost_usd=r.get("cost_usd", 0),
+                    ))
+            return preds
+
+        # Pairwise McNemar's test between first two models
+        a_label, b_label = model_labels[0], model_labels[1]
+        preds_a = _to_preds(all_results[a_label])
+        preds_b = _to_preds(all_results[b_label])
+
+        if preds_a and preds_b:
+            # Align by log_id
+            ids_a = {p.log_id for p in preds_a}
+            ids_b = {p.log_id for p in preds_b}
+            common = sorted(ids_a & ids_b)
+            map_a = {p.log_id: p for p in preds_a}
+            map_b = {p.log_id: p for p in preds_b}
+            aligned_a = [map_a[lid] for lid in common]
+            aligned_b = [map_b[lid] for lid in common]
+
+            mcnemar = StatisticalTests.mcnemar_test(aligned_a, aligned_b)
+            ci_a = StatisticalTests.bootstrap_confidence_interval(aligned_a)
+            ci_b = StatisticalTests.bootstrap_confidence_interval(aligned_b)
+            perm = StatisticalTests.paired_permutation_test(aligned_a, aligned_b)
+
+            stat_report = {
+                "models_compared": [a_label, b_label],
+                "n_common_logs": len(common),
+                "mcnemar": mcnemar,
+                "bootstrap_ci": {a_label: ci_a, b_label: ci_b},
+                "permutation_test": perm,
+            }
+            report["statistical_tests"] = stat_report
+
+            stat_file = os.path.join(out_dir, "statistical_tests.json")
+            with open(stat_file, "w") as f:
+                json.dump(stat_report, f, indent=2)
+
+            print("\n  STATISTICAL TESTS")
+            print("  " + "-" * 60)
+            print(f"  McNemar's test ({a_label} vs {b_label}):")
+            print(f"    chi2 = {mcnemar['chi2']}, p = {mcnemar['p_value']}")
+            print(f"    → {mcnemar['verdict']}")
+            print(f"  Bootstrap 95% CI ({a_label}): [{ci_a['ci_lower']:.1%}, {ci_a['ci_upper']:.1%}]")
+            print(f"  Bootstrap 95% CI ({b_label}): [{ci_b['ci_lower']:.1%}, {ci_b['ci_upper']:.1%}]")
+            print(f"  Permutation test: diff = {perm['observed_accuracy_diff']:.1%}, p = {perm['p_value']}")
+            print()
+
+    # ── Cost-accuracy trade-off chart ─────────────────────────────────
+    if any(m.get("error_type_accuracy") is not None for m in all_metrics.values()):
+        chart_data = {}
+        for label, m in all_metrics.items():
+            if m.get("error_type_accuracy") is not None:
+                chart_data[label] = {
+                    "accuracy": m["error_type_accuracy"],
+                    "cost_per_diagnosis_usd": m.get("cost_per_diagnosis_usd", 0),
+                    "avg_execution_time_ms": m.get("avg_execution_time_ms", 0),
+                }
+        if chart_data:
+            chart_path = os.path.join(out_dir, "cost_accuracy_tradeoff.png")
+            Visualizer.plot_cost_accuracy_tradeoff(chart_data, chart_path)
+
+    # Overwrite report with new fields
+    with open(report_file, "w") as f:
+        json.dump(report, f, indent=2)
 
     print(f"  Results saved to: {out_dir}/")
     print()

@@ -10,7 +10,10 @@ Master's thesis project -- Tampere University.
 - **Smart log filtering** -- keyword-based filtering with tiktoken token counting and intelligent middle-out truncation (configurable token budget, default 12 000)
 - **Grounding verification** -- hallucination detection with exact + fuzzy matching (SequenceMatcher, threshold 0.75)
 - **Checkpoint/resume** -- diagnosis pipeline resumes from where it left off on interruption
-- **Multi-model benchmarking** -- compare LLMs side-by-side on the same logs without the API overhead
+- **Cost tracking** -- per-request token usage and estimated USD cost from API response metadata (OpenAI, Anthropic, Ollama)
+- **Multi-model benchmarking** -- compare LLMs side-by-side on the same logs with cost, accuracy, and latency comparison
+- **Statistical significance tests** -- McNemar's test, bootstrap confidence intervals, paired permutation test for rigorous model comparison
+- **Cost-accuracy trade-off chart** -- auto-generated scatter plot showing each model's accuracy vs cost per diagnosis
 - **RAG system** -- ChromaDB + SentenceTransformers for documentation-augmented diagnosis (experimental)
 
 ## Project Structure
@@ -102,7 +105,7 @@ make run         # 3. Start the diagnostic API (separate terminal)
 make diagnose    # 4. Send triaged logs to API for diagnosis
 make annotate    # 5. Manually annotate ground truth
 make evaluate    # 6. Generate evaluation report & charts
-make benchmark   # 7. Benchmark multiple LLMs side-by-side (no API needed)
+make benchmark   # 7. Benchmark multiple LLMs side-by-side (cost + accuracy + stats)
 ```
 
 Or use the all-in-one bash script:
@@ -136,7 +139,19 @@ python automated_scripts/benchmark_models.py --limit 10
 python automated_scripts/benchmark_models.py --ground-truth data/evaluation/ground_truth.json
 ```
 
-Results are saved to `results/benchmark/<timestamp>/` with per-model results, a comparison report, and a printable summary table.
+Results are saved to `results/benchmark/<timestamp>/` with per-model results, a comparison report, a printable summary table, and (when ground truth is provided) statistical significance tests and a cost-accuracy trade-off chart.
+
+### Benchmark Outputs
+
+When ground truth is available, the benchmark automatically produces:
+
+| File | Description |
+|------|-------------|
+| `results_<provider>_<model>.json` | Raw per-log diagnosis results with token usage and cost |
+| `comparison_report.json` | Side-by-side metrics including cost and accuracy |
+| `comparison_table.txt` | Printable summary table |
+| `statistical_tests.json` | McNemar's test, bootstrap 95% CIs, permutation test |
+| `cost_accuracy_tradeoff.png` | Scatter plot: cost per diagnosis vs accuracy |
 
 ## Diagnose a Single Log
 

@@ -3,12 +3,13 @@
 import json
 import numpy as np
 from typing import List, Dict, Tuple, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from sklearn.metrics import precision_recall_fscore_support, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
 import pandas as pd
+from scipy import stats
 
 @dataclass
 class EvaluationMetrics:
@@ -20,6 +21,8 @@ class EvaluationMetrics:
     hallucination_rate: float
     mean_confidence: float
     mean_execution_time_ms: float
+    total_cost_usd: float = 0.0
+    cost_per_diagnosis_usd: float = 0.0
 
 @dataclass
 class PredictionResult:
@@ -32,6 +35,7 @@ class PredictionResult:
     confidence: float
     hallucination_detected: bool
     execution_time_ms: float
+    cost_usd: float = 0.0
 
 class BaselineEvaluator:
     """Baseline methods for comparison"""
@@ -177,7 +181,12 @@ class MetricsCalculator:
             accuracy=accuracy,
             hallucination_rate=hallucination_rate,
             mean_confidence=mean_confidence,
-            mean_execution_time_ms=mean_execution_time
+            mean_execution_time_ms=mean_execution_time,
+            total_cost_usd=sum(p.cost_usd for p in predictions),
+            cost_per_diagnosis_usd=(
+                sum(p.cost_usd for p in predictions) / len(predictions)
+                if predictions else 0.0
+            ),
         )
     
     @staticmethod
@@ -375,6 +384,186 @@ class Visualizer:
         plt.tight_layout()
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         print(f"Saved hallucination analysis to {output_path}")
+
+    @staticmethod
+    def plot_cost_accuracy_tradeoff(
+        model_metrics: Dict[str, Dict],
+        output_path: str,
+    ):
+        """Scatter plot: cost per diagnosis (x) vs accuracy (y) per model.
+
+        ``model_metrics`` maps model labels to dicts that contain at least
+        ``cost_per_diagnosis_usd`` and ``accuracy`` (or ``error_type_accuracy``).
+        """
+        fig, ax = plt.subplots(figsize=(8, 6))
+
+        for label, m in model_metrics.items():
+            cost = m.get("cost_per_diagnosis_usd", m.get("total_cost_usd", 0))
+            acc = m.get("accuracy", m.get("error_type_accuracy", 0))
+            time_ms = m.get("avg_execution_time_ms", m.get("mean_execution_time_ms", 0))
+
+            # Bubble size proportional to speed (inverse: faster = bigger)
+            size = max(60, 300 - time_ms / 10)
+            ax.scatter(cost * 1000, acc * 100, s=size, alpha=0.8, zorder=5)
+            ax.annotate(
+                label,
+                (cost * 1000, acc * 100),
+                textcoords="offset points",
+                xytext=(8, 6),
+                fontsize=9,
+            )
+
+        ax.set_xlabel("Cost per Diagnosis (× $0.001)")
+        ax.set_ylabel("Error-Type Accuracy (%)")
+        ax.set_title("Cost–Accuracy Trade-off by Model")
+        ax.grid(alpha=0.3)
+        ax.set_ylim(0, 105)
+
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"Saved cost-accuracy trade-off chart to {output_path}")
+
+
+class StatisticalTests:
+    """Statistical significance tests for comparing two classifiers."""
+
+    @staticmethod
+    def mcnemar_test(
+        predictions_a: List[PredictionResult],
+        predictions_b: List[PredictionResult],
+    ) -> Dict[str, float]:
+        """McNemar's test comparing two models on the same data set.
+
+        Both prediction lists must be aligned (same log_id order).
+        Returns chi-squared statistic, p-value, and a human-readable verdict.
+        """
+        if len(predictions_a) != len(predictions_b):
+            raise ValueError("Both prediction lists must have the same length")
+
+        # Build the 2×2 contingency table
+        # b = correct/incorrect for model A vs model B
+        n01 = 0  # A wrong, B right
+        n10 = 0  # A right, B wrong
+        for pa, pb in zip(predictions_a, predictions_b):
+            a_correct = pa.predicted_error_type == pa.actual_error_type
+            b_correct = pb.predicted_error_type == pb.actual_error_type
+            if a_correct and not b_correct:
+                n10 += 1
+            elif not a_correct and b_correct:
+                n01 += 1
+
+        # McNemar's test with continuity correction
+        n_discordant = n01 + n10
+        if n_discordant == 0:
+            return {
+                "n01": n01,
+                "n10": n10,
+                "chi2": 0.0,
+                "p_value": 1.0,
+                "significant_at_005": False,
+                "verdict": "Models performed identically on all samples",
+            }
+
+        chi2 = (abs(n01 - n10) - 1) ** 2 / (n01 + n10)
+        p_value = 1 - stats.chi2.cdf(chi2, df=1)
+
+        return {
+            "n01": n01,
+            "n10": n10,
+            "chi2": round(chi2, 4),
+            "p_value": round(p_value, 6),
+            "significant_at_005": p_value < 0.05,
+            "verdict": (
+                "Statistically significant difference (p < 0.05)"
+                if p_value < 0.05
+                else "No statistically significant difference (p >= 0.05)"
+            ),
+        }
+
+    @staticmethod
+    def bootstrap_confidence_interval(
+        predictions: List[PredictionResult],
+        metric_fn=None,
+        n_bootstrap: int = 1000,
+        confidence: float = 0.95,
+        seed: int = 42,
+    ) -> Dict[str, float]:
+        """Bootstrap confidence interval for accuracy (or a custom metric).
+
+        ``metric_fn`` takes a list of PredictionResult and returns a float.
+        Defaults to error-type accuracy.
+        """
+        rng = np.random.default_rng(seed)
+
+        if metric_fn is None:
+            def metric_fn(preds):
+                correct = sum(
+                    1 for p in preds if p.predicted_error_type == p.actual_error_type
+                )
+                return correct / len(preds) if preds else 0.0
+
+        observed = metric_fn(predictions)
+        n = len(predictions)
+        boot_values = []
+
+        for _ in range(n_bootstrap):
+            sample = [predictions[i] for i in rng.integers(0, n, size=n)]
+            boot_values.append(metric_fn(sample))
+
+        boot_values = np.array(boot_values)
+        alpha = 1 - confidence
+        lower = float(np.percentile(boot_values, 100 * alpha / 2))
+        upper = float(np.percentile(boot_values, 100 * (1 - alpha / 2)))
+
+        return {
+            "observed": round(observed, 4),
+            "ci_lower": round(lower, 4),
+            "ci_upper": round(upper, 4),
+            "confidence": confidence,
+            "n_bootstrap": n_bootstrap,
+        }
+
+    @staticmethod
+    def paired_permutation_test(
+        predictions_a: List[PredictionResult],
+        predictions_b: List[PredictionResult],
+        n_permutations: int = 10000,
+        seed: int = 42,
+    ) -> Dict[str, float]:
+        """Two-sided paired permutation test on accuracy difference."""
+        if len(predictions_a) != len(predictions_b):
+            raise ValueError("Both prediction lists must have the same length")
+
+        rng = np.random.default_rng(seed)
+        n = len(predictions_a)
+
+        a_correct = np.array([
+            int(p.predicted_error_type == p.actual_error_type) for p in predictions_a
+        ])
+        b_correct = np.array([
+            int(p.predicted_error_type == p.actual_error_type) for p in predictions_b
+        ])
+
+        observed_diff = float(a_correct.mean() - b_correct.mean())
+        diffs = a_correct - b_correct
+
+        count_extreme = 0
+        for _ in range(n_permutations):
+            signs = rng.choice([-1, 1], size=n)
+            perm_diff = float((diffs * signs).mean())
+            if abs(perm_diff) >= abs(observed_diff):
+                count_extreme += 1
+
+        p_value = count_extreme / n_permutations
+
+        return {
+            "observed_accuracy_diff": round(observed_diff, 4),
+            "p_value": round(p_value, 6),
+            "significant_at_005": p_value < 0.05,
+            "n_permutations": n_permutations,
+        }
+
 
 class BenchmarkRunner:
     """Main benchmark runner"""
