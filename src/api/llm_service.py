@@ -49,12 +49,16 @@ Respond in JSON format:
 class LLMDiagnoser:
     """Thin wrapper around OpenAI / Anthropic for CI/CD log diagnosis."""
 
+    # Default Ollama endpoint (OpenAI-compatible)
+    OLLAMA_BASE_URL = "http://localhost:11434/v1"
+
     def __init__(
         self,
         provider: LLMProvider,
         model: str,
         api_key: Optional[str] = None,
         max_tokens: int = 4096,
+        base_url: Optional[str] = None,
     ):
         self.provider = provider
         self.model = model
@@ -65,6 +69,12 @@ class LLMDiagnoser:
             self._openai = openai.AsyncOpenAI(api_key=api_key)
         elif provider == LLMProvider.ANTHROPIC:
             self._anthropic = anthropic.AsyncAnthropic(api_key=api_key)
+        elif provider == LLMProvider.LOCAL:
+            # Ollama exposes an OpenAI-compatible API at /v1
+            self._local = openai.AsyncOpenAI(
+                api_key="ollama",  # Ollama ignores this but the client requires it
+                base_url=base_url or self.OLLAMA_BASE_URL,
+            )
 
     # -- public ----------------------------------------------------------
 
@@ -120,6 +130,8 @@ class LLMDiagnoser:
                     return await self._diagnose_openai(prompt, temperature)
                 elif self.provider == LLMProvider.ANTHROPIC:
                     return await self._diagnose_anthropic(prompt, temperature)
+                elif self.provider == LLMProvider.LOCAL:
+                    return await self._diagnose_local(prompt, temperature)
                 else:
                     raise ValueError(f"Unsupported LLM provider: {self.provider}")
             except (openai.RateLimitError, anthropic.RateLimitError) as exc:
@@ -136,6 +148,8 @@ class LLMDiagnoser:
         # Final attempt without catching
         if self.provider == LLMProvider.OPENAI:
             return await self._diagnose_openai(prompt, temperature)
+        elif self.provider == LLMProvider.LOCAL:
+            return await self._diagnose_local(prompt, temperature)
         return await self._diagnose_anthropic(prompt, temperature)
 
     # -- private ---------------------------------------------------------
@@ -160,6 +174,26 @@ class LLMDiagnoser:
             messages=[{"role": "user", "content": prompt}],
         )
         content = response.content[0].text
+        json_match = re.search(r'\{.*\}', content, re.DOTALL)
+        if json_match:
+            return json.loads(json_match.group())
+        return json.loads(content)
+
+    async def _diagnose_local(self, prompt: str, temperature: float) -> Dict[str, Any]:
+        """Diagnose via Ollama (or any OpenAI-compatible local server).
+
+        Most local models do not support ``response_format: json_object``,
+        so we extract JSON from the raw text response instead.
+        """
+        response = await self._local.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": SYSTEM_MESSAGE},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=temperature,
+        )
+        content = response.choices[0].message.content
         json_match = re.search(r'\{.*\}', content, re.DOTALL)
         if json_match:
             return json.loads(json_match.group())

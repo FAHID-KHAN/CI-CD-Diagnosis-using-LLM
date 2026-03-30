@@ -1,6 +1,6 @@
 # Makefile for CI/CD Diagnosis Project
 
-.PHONY: help install run test collect triage diagnose annotate evaluate docker clean
+.PHONY: help install run test collect triage diagnose annotate evaluate benchmark docker clean
 
 help:
 	@echo "Available commands:"
@@ -12,6 +12,7 @@ help:
 	@echo "  make diagnose   - Diagnose logs via API"
 	@echo "  make annotate   - Annotate diagnosed logs (ground truth)"
 	@echo "  make evaluate   - Run demonstration evaluation"
+	@echo "  make benchmark  - Benchmark multiple LLMs (no API needed)"
 	@echo "  make docker     - Build and run with Docker"
 	@echo "  make clean      - Clean generated files"
 
@@ -38,6 +39,9 @@ annotate:
 
 evaluate:
 	python automated_scripts/evaluate_demo.py
+
+benchmark:
+	python automated_scripts/benchmark_models.py
 
 docker:
 	docker-compose up --build

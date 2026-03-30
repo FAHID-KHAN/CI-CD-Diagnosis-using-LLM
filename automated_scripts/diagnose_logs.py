@@ -60,6 +60,27 @@ if not args.yes:
         print("Cancelled.")
         exit()
 
+# Resolve output path early for checkpoint support
+if args.output:
+    output_file = args.output
+else:
+    output_dir = os.path.join(parent_dir, 'data/annotated_logs')
+    os.makedirs(output_dir, exist_ok=True)
+    output_file = os.path.join(output_dir, 'diagnosed_batch1.json')
+
+# Load existing results for resume support
+existing_results = []
+already_diagnosed = set()
+if os.path.exists(output_file):
+    try:
+        with open(output_file, 'r') as f:
+            existing_results = json.load(f)
+        already_diagnosed = {r['log_id'] for r in existing_results}
+        if already_diagnosed:
+            print(f"  Resuming: {len(already_diagnosed)} logs already diagnosed, skipping them.")
+    except (json.JSONDecodeError, KeyError):
+        pass
+
 # Check API is running
 print()
 print("  Checking if API is running...")
@@ -82,10 +103,15 @@ print()
 print("  Starting diagnosis...")
 print()
 
-results = []
+results = list(existing_results)
 errors = []
 
 for i, log in enumerate(logs, 1):
+    # Skip already-diagnosed logs (resume support)
+    if log['log_id'] in already_diagnosed:
+        print(f"[{i}/{len(logs)}] {log['repository']} - {log['workflow_name']}  SKIP (already diagnosed)")
+        continue
+
     label = log.get('triage_priority', '')
     label_str = f" [{label}]" if label else ""
     print(f"[{i}/{len(logs)}] {log['repository']} - {log['workflow_name']}{label_str}", end=" ")
@@ -119,6 +145,10 @@ for i, log in enumerate(logs, 1):
             })
             
             print(f"  OK  {diagnosis['error_type']} ({diagnosis['confidence_score']:.0%})")
+
+            # Checkpoint: save after each successful diagnosis
+            with open(output_file, 'w') as f:
+                json.dump(results, f, indent=2)
         else:
             print(f"  FAIL  HTTP {response.status_code}")
             errors.append(log['log_id'])
@@ -136,17 +166,11 @@ print("  Diagnosis Complete")
 print("="*70)
 print(f"  Success: {len(results)}/{len(logs)}")
 print(f"  Failed : {len(errors)}/{len(logs)}")
+print(f"  Skipped: {len(already_diagnosed)}/{len(logs)} (already diagnosed)")
 print()
 
-# Save results
+# Final save (also covers the case where all were resumed)
 if results:
-    if args.output:
-        output_file = args.output
-    else:
-        output_dir = os.path.join(parent_dir, 'data/annotated_logs')
-        os.makedirs(output_dir, exist_ok=True)
-        output_file = os.path.join(output_dir, 'diagnosed_batch1.json')
-    
     with open(output_file, 'w') as f:
         json.dump(results, f, indent=2)
     

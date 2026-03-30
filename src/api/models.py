@@ -25,7 +25,7 @@ class LLMProvider(str, Enum):
 class DiagnosisRequest(BaseModel):
     log_content: str = Field(..., description="Raw CI/CD log content")
     provider: LLMProvider = Field(default=LLMProvider.OPENAI)
-    model: str = Field(default="gpt-4")
+    model: str = Field(default="gpt-4o-mini")
     temperature: float = Field(default=0.1, ge=0, le=2)
     use_filtering: bool = Field(default=True)
     max_context_lines: int = Field(default=500)

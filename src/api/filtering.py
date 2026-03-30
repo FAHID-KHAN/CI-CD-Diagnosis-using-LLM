@@ -1,6 +1,22 @@
 # filtering.py - Log filtering strategies
 
+import logging
 from typing import List
+
+logger = logging.getLogger(__name__)
+
+try:
+    import tiktoken
+    _encoder = tiktoken.encoding_for_model("gpt-4o-mini")
+except Exception:
+    _encoder = None
+
+
+def _count_tokens(text: str) -> int:
+    """Count tokens using tiktoken if available, else estimate ~4 chars/token."""
+    if _encoder is not None:
+        return len(_encoder.encode(text))
+    return len(text) // 4
 
 
 class LogFilter:
@@ -39,18 +55,29 @@ class LogFilter:
         return contexts
 
     @staticmethod
-    def apply_smart_filtering(log_content: str, max_lines: int = 500, window_size: int = 20) -> str:
+    def apply_smart_filtering(
+        log_content: str,
+        max_lines: int = 500,
+        window_size: int = 20,
+        max_tokens: int = 12000,
+    ) -> str:
         """Intelligently reduce log size while preserving error context.
 
         Returns a string where each kept line is prefixed with its original
         line number: ``[Line N] content``.
+
+        After line-based filtering, the result is further truncated to
+        *max_tokens* so that the LLM prompt stays within context limits.
         """
         lines = log_content.split('\n')
 
         error_indices = LogFilter.filter_by_keywords(lines)
 
         if not error_indices:
-            return '\n'.join(lines[-max_lines:])
+            tail = lines[-max_lines:]
+            start_idx = len(lines) - len(tail)
+            result = [f"[Line {start_idx + i}] {l}" for i, l in enumerate(tail)]
+            return LogFilter._truncate_to_tokens('\n'.join(result), max_tokens)
 
         contexts = LogFilter.get_context_window(lines, error_indices, window_size=window_size)
 
@@ -67,4 +94,34 @@ class LogFilter:
         filtered_lines.sort(key=lambda x: x[0])
 
         result = [f"[Line {num}] {content}" for num, content in filtered_lines[:max_lines]]
-        return '\n'.join(result)
+        return LogFilter._truncate_to_tokens('\n'.join(result), max_tokens)
+
+    @staticmethod
+    def _truncate_to_tokens(text: str, max_tokens: int) -> str:
+        """Trim text from the middle if it exceeds *max_tokens*.
+
+        Keeps the first and last portions so the LLM sees both the
+        beginning of the log context and the final error lines.
+        """
+        token_count = _count_tokens(text)
+        if token_count <= max_tokens:
+            return text
+
+        lines = text.split('\n')
+        half = len(lines) // 2
+        head = lines[:half]
+        tail = lines[half:]
+
+        # Trim from the middle: shorten head, then tail, until under budget
+        while _count_tokens('\n'.join(head + ['... [truncated] ...'] + tail)) > max_tokens:
+            if len(head) > len(tail) and len(head) > 5:
+                head.pop()
+            elif len(tail) > 5:
+                tail.pop(0)
+            else:
+                break
+
+        truncated = head + ['... [truncated] ...'] + tail
+        logger.info("Truncated log from %d to %d tokens (%d lines)",
+                    token_count, _count_tokens('\n'.join(truncated)), len(truncated))
+        return '\n'.join(truncated)

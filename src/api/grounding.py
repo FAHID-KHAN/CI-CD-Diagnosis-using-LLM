@@ -2,11 +2,15 @@
 
 import logging
 import re
+from difflib import SequenceMatcher
 from typing import List
 
 from src.api.models import LogLine
 
 logger = logging.getLogger(__name__)
+
+# Minimum similarity ratio to consider a cited line as verified
+_FUZZY_THRESHOLD = 0.75
 
 
 class GroundingVerifier:
@@ -44,15 +48,25 @@ class GroundingVerifier:
         verified = 0
         for ev in evidence:
             actual = line_map.get(ev.line_number, "")
-            if ev.content.strip() and ev.content.strip() in actual:
+            cited = ev.content.strip()
+            if not cited:
+                continue
+            # Exact substring match (fast path)
+            if cited in actual:
                 verified += 1
             else:
-                logger.debug(
-                    "Evidence mismatch: line %d cited '%s' but actual is '%s'",
-                    ev.line_number,
-                    ev.content[:60],
-                    actual[:60],
-                )
+                # Fuzzy match: handles minor LLM paraphrasing / truncation
+                ratio = SequenceMatcher(None, cited, actual.strip()).ratio()
+                if ratio >= _FUZZY_THRESHOLD:
+                    verified += 1
+                else:
+                    logger.debug(
+                        "Evidence mismatch: line %d cited '%s' but actual is '%s' (ratio=%.2f)",
+                        ev.line_number,
+                        cited[:60],
+                        actual[:60],
+                        ratio,
+                    )
 
         score = verified / len(evidence)
         hallucination_detected = score < threshold

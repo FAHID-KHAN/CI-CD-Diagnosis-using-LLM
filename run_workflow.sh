@@ -3,14 +3,15 @@
 #  CI/CD Diagnosis LLM - Full Workflow Runner
 # ==========================================================================
 #
-#  Runs the complete 6-step pipeline:
+#  Runs the complete 8-step pipeline:
 #    1. Install dependencies
 #    2. Collect CI/CD logs from GitHub Actions
 #    3. Triage collected logs (filter noise)
 #    4. Start diagnostic API server
-#    5. Diagnose logs via the API
+#    5. Diagnose logs via the API (with checkpoint/resume)
 #    6. Annotate diagnosed logs (interactive ground truth)
 #    7. Run demonstration evaluation (report + charts)
+#    8. Benchmark multiple LLMs side-by-side (no API needed)
 #
 #  Usage:
 #    ./run_workflow.sh                 # Run full pipeline
@@ -18,7 +19,9 @@
 #    ./run_workflow.sh --skip-collect  # Skip collection (use existing logs)
 #    ./run_workflow.sh --skip-annotate # Skip interactive annotation
 #    ./run_workflow.sh --from 4        # Resume from step 4 (start API + diagnose + ...)
-#    ./run_workflow.sh --only 7        # Run only step 7 (evaluate)
+#    ./run_workflow.sh --only 8        # Run only step 8 (benchmark)
+#    ./run_workflow.sh --provider local --model llama3  # Use local Ollama model
+#    ./run_workflow.sh --benchmark-models "openai/gpt-4o-mini local/llama3 local/mistral"
 #    ./run_workflow.sh --help          # Show this help
 #
 # ==========================================================================
@@ -66,11 +69,13 @@ trap cleanup EXIT INT TERM
 SKIP_INSTALL=false
 SKIP_COLLECT=false
 SKIP_ANNOTATE=false
+SKIP_BENCHMARK=false
 FROM_STEP=1
 ONLY_STEP=0
 MODEL="gpt-4o-mini"
 PROVIDER="openai"
 LIMIT=""
+BENCHMARK_MODELS=""
 
 usage() {
     head -25 "$0" | tail -18 | sed 's/^#//;s/^ //'
@@ -82,11 +87,13 @@ while [[ $# -gt 0 ]]; do
         --skip-install)  SKIP_INSTALL=true; shift ;;
         --skip-collect)  SKIP_COLLECT=true; shift ;;
         --skip-annotate) SKIP_ANNOTATE=true; shift ;;
+        --skip-benchmark) SKIP_BENCHMARK=true; shift ;;
         --from)          FROM_STEP="$2"; shift 2 ;;
         --only)          ONLY_STEP="$2"; shift 2 ;;
         --model)         MODEL="$2"; shift 2 ;;
         --provider)      PROVIDER="$2"; shift 2 ;;
         --limit)         LIMIT="$2"; shift 2 ;;
+        --benchmark-models) BENCHMARK_MODELS="$2"; shift 2 ;;
         --port)          API_PORT="$2"; API_URL="http://localhost:${API_PORT}"; shift 2 ;;
         --help|-h)       usage ;;
         *) warn "Unknown option: $1"; shift ;;
@@ -357,6 +364,40 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════════
+# Step 8: Benchmark multiple LLMs
+# ══════════════════════════════════════════════════════════════════════════
+if should_run 8; then
+    banner 8 "Benchmark Multiple LLMs"
+
+    if [[ "${SKIP_BENCHMARK}" == true ]]; then
+        warn "Skipping benchmark (--skip-benchmark)."
+    else
+        BENCHMARK_ARGS=()
+
+        if [[ -n "${BENCHMARK_MODELS}" ]]; then
+            # shellcheck disable=SC2086
+            BENCHMARK_ARGS+=(--models ${BENCHMARK_MODELS})
+        fi
+
+        if [[ -n "${LIMIT}" ]]; then
+            BENCHMARK_ARGS+=(--limit "${LIMIT}")
+        fi
+
+        GT_FILE="${PROJECT_DIR}/data/evaluation/ground_truth.json"
+        if [[ -f "${GT_FILE}" ]]; then
+            BENCHMARK_ARGS+=(--ground-truth "${GT_FILE}")
+            info "Using ground truth for accuracy scoring."
+        fi
+
+        info "Running multi-model benchmark..."
+        python automated_scripts/benchmark_models.py "${BENCHMARK_ARGS[@]}"
+        success "Benchmark complete. Results saved to results/benchmark/."
+    fi
+else
+    info "Skipping step 8 (benchmark)."
+fi
+
+# ══════════════════════════════════════════════════════════════════════════
 # Summary
 # ══════════════════════════════════════════════════════════════════════════
 echo ""
@@ -383,6 +424,17 @@ for label_path in \
         echo -e "  ${RED}[missing]${NC} ${label} - ${path}"
     fi
 done
+
+# Show latest benchmark results if any
+LATEST_BENCH=$(find "${PROJECT_DIR}/results/benchmark" -name "comparison_report.json" -type f 2>/dev/null | sort | tail -1)
+if [[ -n "${LATEST_BENCH}" ]]; then
+    BENCH_DIR=$(dirname "${LATEST_BENCH}")
+    BENCH_TS=$(basename "${BENCH_DIR}")
+    NUM_MODELS=$(python3 -c "import json; print(len(json.load(open('${LATEST_BENCH}'))['models']))" 2>/dev/null || echo "?")
+    echo -e "  ${GREEN}[exists]${NC} Benchmark (${NUM_MODELS} models, ${BENCH_TS}) - ${LATEST_BENCH#${PROJECT_DIR}/}"
+else
+    echo -e "  ${RED}[missing]${NC} Benchmark results - results/benchmark/"
+fi
 
 echo ""
 info "API server will be stopped on script exit."

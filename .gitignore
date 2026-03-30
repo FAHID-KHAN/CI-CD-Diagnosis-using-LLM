@@ -24,6 +24,7 @@ dist/
 # Data (keep structure, ignore large files)
 data/raw_logs/**/*.json
 !data/raw_logs/.gitkeep
+data/_archive_*/**
 chroma_db/*
 !chroma_db/.gitkeep
 *.db
