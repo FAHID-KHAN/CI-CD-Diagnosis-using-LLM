@@ -8,6 +8,8 @@ import requests
 import time
 import argparse
 
+from automated_scripts.pipeline_manifest import record_step
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Send collected logs to the diagnostic API")
     parser.add_argument("--input", default=None,
@@ -196,3 +198,12 @@ print()
 print("="*70)
 print("  Next step: python automated_scripts/annotate.py")
 print("="*70)
+
+# Record in pipeline manifest
+record_step(
+    step="diagnose",
+    config={"model": f"{args.provider}/{args.model}", "api_url": args.api_url},
+    inputs={"triaged_logs": len(logs), "file": log_file},
+    outputs={"diagnosed": len(results), "failed": len(errors), "file": output_file},
+    notes=f"{len(results)}/{len(logs)} diagnosed, {len(errors)} failed",
+)

@@ -455,3 +455,15 @@ fi
 echo ""
 info "API server will be stopped on script exit."
 echo ""
+
+# Pipeline manifest summary
+MANIFEST="${PROJECT_DIR}/data/pipeline_manifest.json"
+if [[ -f "${MANIFEST}" ]]; then
+    echo -e "${BOLD}  Pipeline Manifest:${NC}"
+    python3 -c "
+import sys; sys.path.insert(0, '${PROJECT_DIR}')
+from automated_scripts.pipeline_manifest import summary
+print(summary())
+" 2>/dev/null || true
+    echo ""
+fi

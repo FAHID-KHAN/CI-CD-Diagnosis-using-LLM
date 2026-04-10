@@ -25,6 +25,9 @@ import re
 from collections import Counter, defaultdict
 
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, parent_dir)
+
+from automated_scripts.pipeline_manifest import record_step
 
 
 # ---------------------------------------------------------------------------
@@ -201,6 +204,15 @@ def main():
         json.dump(kept, f, indent=2)
 
     print(f"  Saved {len(kept)} triaged logs to: {args.output}")
+
+    # Record in pipeline manifest
+    record_step(
+        step="triage",
+        config={"min_lines": args.min_lines, "max_duplicates": args.max_duplicates},
+        inputs={"raw_logs": len(logs), "file": args.input},
+        outputs={"kept": len(kept), "removed": len(removed), "file": args.output},
+        notes=f"{len(kept)}/{len(logs)} kept; removed: {dict(removal_reasons)}",
+    )
     print()
     print("  Next step:")
     print("    1. Start API:   uvicorn src.api.main:app --reload")

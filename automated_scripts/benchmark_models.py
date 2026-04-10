@@ -49,6 +49,7 @@ from src.evaluation.evaluation import (
     StatisticalTests,
     Visualizer,
 )
+from automated_scripts.pipeline_manifest import record_step
 
 
 # ── Default model configurations ──────────────────────────────────────────
@@ -439,6 +440,19 @@ async def main():
 
     print(f"  Results saved to: {out_dir}/")
     print()
+
+    # Record in pipeline manifest
+    record_step(
+        step="benchmark",
+        config={"models": args.models, "temperature": args.temperature},
+        inputs={"logs": len(logs), "file": input_file},
+        outputs={
+            "models_benchmarked": len(all_metrics),
+            "output_dir": out_dir,
+            **{f"{k}_diagnosed": m.get("total_logs", 0) for k, m in all_metrics.items()},
+        },
+        notes=f"{len(all_metrics)} models benchmarked on {len(logs)} logs",
+    )
 
 
 if __name__ == "__main__":

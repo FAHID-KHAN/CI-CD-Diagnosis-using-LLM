@@ -20,6 +20,9 @@ import argparse
 from datetime import datetime
 
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, parent_dir)
+
+from automated_scripts.pipeline_manifest import record_step
 
 ERROR_TYPES = [
     "dependency_error",
@@ -258,6 +261,15 @@ def main():
     print("=" * 75)
     print()
     print("  Next step: python automated_scripts/evaluate_demo.py")
+
+    # Record in pipeline manifest
+    record_step(
+        step="annotate",
+        config={"annotator": "manual"},
+        inputs={"diagnosed_logs": len(diagnosed), "file": args.input},
+        outputs={"annotations": len(annotations), "file": args.output},
+        notes=f"{len(annotations)}/{len(diagnosed)} logs annotated",
+    )
 
 
 if __name__ == "__main__":

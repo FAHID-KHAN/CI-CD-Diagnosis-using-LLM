@@ -37,6 +37,8 @@ import numpy as np
 # Import baselines from the existing evaluation module
 from evaluation.evaluation import BaselineEvaluator
 
+from automated_scripts.pipeline_manifest import record_step
+
 
 def load_ground_truth(path: str) -> list:
     with open(path) as f:
@@ -414,6 +416,20 @@ def main():
     print(f"  Charts saved to: {args.output_dir}/")
     print()
     print("  Done!")
+
+    # Record in pipeline manifest
+    record_step(
+        step="evaluate",
+        config={},
+        inputs={"annotations": len(annotations), "file": args.ground_truth},
+        outputs={
+            "llm_accuracy": round(llm_metrics["error_type_accuracy"], 3),
+            "regex_accuracy": round(baseline_metrics["regex"]["accuracy"], 3),
+            "heuristic_accuracy": round(baseline_metrics["heuristic"]["accuracy"], 3),
+            "report_file": report_path,
+        },
+        notes=f"LLM {llm_metrics['error_type_accuracy']:.0%} vs regex {baseline_metrics['regex']['accuracy']:.0%} vs heuristic {baseline_metrics['heuristic']['accuracy']:.0%}",
+    )
 
 
 if __name__ == "__main__":

@@ -13,6 +13,8 @@ load_dotenv(os.path.join(parent_dir, '.env'))
 from log_setup import setup_logging
 from data_collection.data_collection import GitHubActionsCollector
 
+from automated_scripts.pipeline_manifest import record_step
+
 setup_logging()
 logger = logging.getLogger(__name__)
 
@@ -151,6 +153,16 @@ def main():
     all_logs = _save(all_logs)
 
     _print_stats(all_logs, output_file)
+
+    # Record in pipeline manifest
+    repo_counts = Counter(log['repository'] for log in all_logs)
+    record_step(
+        step="collect",
+        config={"repos": len(repos), "auto_discover": args.auto_discover},
+        inputs={"source": "GitHub Actions API"},
+        outputs={"total_logs": len(all_logs), "unique_repos": len(repo_counts), "file": output_file},
+        notes=f"Collected {len(all_logs)} logs from {len(repo_counts)} repos",
+    )
 
 
 def _print_stats(all_logs, output_file):
