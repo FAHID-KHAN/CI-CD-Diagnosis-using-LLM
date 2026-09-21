@@ -1,64 +1,47 @@
-# Makefile for CI/CD Diagnosis Project
+.PHONY: help install test preflight collect triage annotate pilot final
 
-.PHONY: help install run test collect triage study-preflight study-collect study-triage diagnose annotate evaluate benchmark docker clean
+STUDY_CONFIG := configs/thesis_fresh_2026.yaml
+STUDY_ROOT := data/studies/thesis_fresh_2026
 
 help:
-	@echo "Available commands:"
-	@echo "  make install    - Install dependencies"
-	@echo "  make run        - Run API server"
-	@echo "  make test       - Run tests"
-	@echo "  make collect    - Collect CI/CD logs from GitHub"
-	@echo "  make triage     - Triage collected logs"
-	@echo "  make study-preflight - Validate the fresh thesis study"
-	@echo "  make study-collect   - Collect the fresh thesis dataset"
-	@echo "  make study-triage    - Triage the fresh thesis dataset"
-	@echo "  make diagnose   - Diagnose logs via API"
-	@echo "  make annotate   - Annotate diagnosed logs (ground truth)"
-	@echo "  make evaluate   - Run demonstration evaluation"
-	@echo "  make benchmark  - Benchmark multiple LLMs (no API needed)"
-	@echo "  make docker     - Build and run with Docker"
-	@echo "  make clean      - Clean generated files"
+	@echo "Controlled thesis commands:"
+	@echo "  make install             Install the lean project environment"
+	@echo "  make test                Run offline tests"
+	@echo "  make preflight           Validate study configuration"
+	@echo "  make collect             Collect the fixed fresh dataset"
+	@echo "  make triage              Apply fixed eligibility rules"
+	@echo "  make annotate ANNOTATOR=id  Blindly annotate eligible logs"
+	@echo "  make pilot               Run the five-log paired pilot"
+	@echo "  make final               Run the complete paired experiment"
 
 install:
-	pip install -e .
-
-run:
-	uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
+	python -m pip install -e ".[dev]"
 
 test:
-	pytest tests/ -v
+	MPLCONFIGDIR=/tmp/cicd-matplotlib pytest tests/ -v
+
+preflight:
+	python automated_scripts/preflight_study.py --study-config $(STUDY_CONFIG)
 
 collect:
-	python automated_scripts/data_collection.py
+	python automated_scripts/data_collection.py --study-config $(STUDY_CONFIG)
 
 triage:
-	python automated_scripts/triage.py
-
-study-preflight:
-	python automated_scripts/preflight_study.py --study-config configs/thesis_fresh_2026.yaml
-
-study-collect:
-	python automated_scripts/data_collection.py --study-config configs/thesis_fresh_2026.yaml
-
-study-triage:
-	python automated_scripts/triage.py --study-config configs/thesis_fresh_2026.yaml
-
-diagnose:
-	python automated_scripts/diagnose_logs.py
+	python automated_scripts/triage.py --study-config $(STUDY_CONFIG)
 
 annotate:
-	python automated_scripts/annotate.py
+	@test -n "$(ANNOTATOR)" || (echo "Usage: make annotate ANNOTATOR=your-id"; exit 1)
+	python automated_scripts/annotate_blind.py --study-config $(STUDY_CONFIG) --annotator "$(ANNOTATOR)"
 
-evaluate:
-	python automated_scripts/evaluate_demo.py
+pilot:
+	python automated_scripts/benchmark_models.py \
+		--input $(STUDY_ROOT)/triaged/eligible_logs.json \
+		--ground-truth $(STUDY_ROOT)/ground_truth/ground_truth.json \
+		--pilot \
+		--output-dir $(STUDY_ROOT)/experiments/pilot_001
 
-benchmark:
-	python automated_scripts/benchmark_models.py
-
-docker:
-	docker-compose up --build
-
-clean:
-	find . -type d -name __pycache__ -exec rm -rf {} +
-	find . -type f -name "*.pyc" -delete
-	rm -rf .pytest_cache build dist *.egg-info
+final:
+	python automated_scripts/benchmark_models.py \
+		--input $(STUDY_ROOT)/triaged/eligible_logs.json \
+		--ground-truth $(STUDY_ROOT)/ground_truth/ground_truth.json \
+		--output-dir $(STUDY_ROOT)/experiments/final_001

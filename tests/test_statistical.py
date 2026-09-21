@@ -1,26 +1,32 @@
 """Quick smoke test for new statistical tests and cost tracking."""
-from src.evaluation.evaluation import StatisticalTests, PredictionResult, Visualizer
-import tempfile, os
+
+import os
+import tempfile
+
+from automated_scripts.benchmark_models import compute_model_metrics
+from src.evaluation.evaluation import PredictionResult, StatisticalTests, Visualizer
 
 
 def _make_preds(correct_mask):
     """Build PredictionResult list from a boolean mask."""
-    types = ["dependency_error", "test_failure", "build_configuration",
-             "timeout", "network_error"]
+    types = ["dependency_error", "test_failure", "build_configuration", "timeout", "network_error"]
     preds = []
     for i, correct in enumerate(correct_mask):
         actual = types[i % len(types)]
         predicted = actual if correct else "unknown"
-        preds.append(PredictionResult(
-            log_id=f"log{i}",
-            predicted_error_type=predicted,
-            actual_error_type=actual,
-            predicted_lines=[], actual_lines=[],
-            confidence=0.8 if correct else 0.3,
-            hallucination_detected=not correct,
-            execution_time_ms=100 + i * 10,
-            cost_usd=0.001 * (i + 1),
-        ))
+        preds.append(
+            PredictionResult(
+                log_id=f"log{i}",
+                predicted_error_type=predicted,
+                actual_error_type=actual,
+                predicted_lines=[],
+                actual_lines=[],
+                confidence=0.8 if correct else 0.3,
+                hallucination_detected=not correct,
+                execution_time_ms=100 + i * 10,
+                cost_usd=0.001 * (i + 1),
+            )
+        )
     return preds
 
 
@@ -70,9 +76,32 @@ def test_cost_accuracy_chart():
 
 def test_prediction_result_cost_field():
     p = PredictionResult(
-        log_id="x", predicted_error_type="unknown", actual_error_type="timeout",
-        predicted_lines=[], actual_lines=[],
-        confidence=0.5, hallucination_detected=False,
-        execution_time_ms=100, cost_usd=0.0042,
+        log_id="x",
+        predicted_error_type="unknown",
+        actual_error_type="timeout",
+        predicted_lines=[],
+        actual_lines=[],
+        confidence=0.5,
+        hallucination_detected=False,
+        execution_time_ms=100,
+        cost_usd=0.0042,
     )
     assert p.cost_usd == 0.0042
+
+
+def test_inference_failure_counts_against_system_accuracy():
+    results = [
+        {
+            "status": "success",
+            "log_id": "one",
+            "error_type": "timeout",
+            "confidence_score": 1.0,
+            "execution_time_ms": 1,
+        },
+        {"status": "error", "log_id": "two", "error": "offline", "execution_time_ms": 1},
+    ]
+    truth = [
+        {"log_id": "one", "actual_error_type": "timeout"},
+        {"log_id": "two", "actual_error_type": "timeout"},
+    ]
+    assert compute_model_metrics(results, truth)["error_type_accuracy"] == 0.5

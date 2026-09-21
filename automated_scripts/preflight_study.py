@@ -13,11 +13,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 parent_dir = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(parent_dir / "src"))
 sys.path.insert(0, str(parent_dir))
 load_dotenv(parent_dir / ".env")
 
-from data_collection.data_collection import GitHubActionsCollector
 from automated_scripts.study_utils import (
     atomic_write_json,
     git_commit,
@@ -25,19 +23,23 @@ from automated_scripts.study_utils import (
     study_directory,
     utc_now,
 )
+from src.data_collection.data_collection import GitHubActionsCollector
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Preflight a fresh thesis dataset")
     parser.add_argument("--study-config", required=True)
     parser.add_argument("--study-dir", default=None)
-    parser.add_argument("--live", action="store_true",
-                        help="Download one failed workflow log into an isolated preflight directory")
-    parser.add_argument("--repository", default=None,
-                        help="Configured owner/repo to use for the live check")
+    parser.add_argument(
+        "--live", action="store_true", help="Download one failed workflow log into an isolated preflight directory"
+    )
+    parser.add_argument("--repository", default=None, help="Configured owner/repo to use for the live check")
     parser.add_argument("--overwrite-preflight", action="store_true")
-    parser.add_argument("--allow-existing-output", action="store_true",
-                        help="Permit existing raw data while validating an interrupted resume")
+    parser.add_argument(
+        "--allow-existing-output",
+        action="store_true",
+        help="Permit existing raw data while validating an interrupted resume",
+    )
     return parser.parse_args()
 
 
@@ -59,19 +61,30 @@ def main() -> int:
 
     root = study_directory(config, args.study_dir)
     raw_path = root / "raw" / "logs.json"
-    check("python", sys.version_info >= (3, 11), sys.version.split()[0])
+    check("python", sys.version_info >= (3, 12), sys.version.split()[0])
     token = os.environ.get("GITHUB_TOKEN", "")
     check("GitHub token", bool(token), "configured" if token else "missing")
     output_ok = not raw_path.exists() or args.allow_existing_output
-    check("final output", output_ok,
-          "available" if not raw_path.exists() else
-          ("existing interrupted output allowed" if args.allow_existing_output else f"already exists: {raw_path}"))
+    check(
+        "final output",
+        output_ok,
+        (
+            "available"
+            if not raw_path.exists()
+            else (
+                "existing interrupted output allowed" if args.allow_existing_output else f"already exists: {raw_path}"
+            )
+        ),
+    )
 
     free_gib = shutil.disk_usage(parent_dir).free / 1024**3
     check("disk space", free_gib >= 5, f"{free_gib:.1f} GiB free")
     target = sum(item["max_logs"] for item in config["repositories"])
-    check("declared target", target == config.get("target_raw_logs"),
-          f"repository total={target}, declared={config.get('target_raw_logs')}")
+    check(
+        "declared target",
+        target == config.get("target_raw_logs"),
+        f"repository total={target}, declared={config.get('target_raw_logs')}",
+    )
 
     configured_names = {item["name"] for item in config["repositories"]}
     repository = args.repository or config["repositories"][0]["name"]
@@ -118,21 +131,24 @@ def main() -> int:
         return 1
 
     atomic_write_json(sample_path, logs[0])
-    atomic_write_json(preflight_dir / "preflight_report.json", {
-        "schema_version": 1,
-        "study_id": config["study_id"],
-        "completed_at": utc_now(),
-        "repository": repository,
-        "log_id": logs[0]["log_id"],
-        "run_id": logs[0]["run_id"],
-        "url": logs[0]["url"],
-        "log_sha256": logs[0]["log_sha256"],
-        "line_count": len(logs[0]["log_content"].splitlines()),
-        "git_commit": git_commit(),
-        "study_config": str(config_path),
-        "checks": checks,
-        "note": "Isolated smoke-test record; its run ID is automatically excluded from the final cohort.",
-    })
+    atomic_write_json(
+        preflight_dir / "preflight_report.json",
+        {
+            "schema_version": 1,
+            "study_id": config["study_id"],
+            "completed_at": utc_now(),
+            "repository": repository,
+            "log_id": logs[0]["log_id"],
+            "run_id": logs[0]["run_id"],
+            "url": logs[0]["url"],
+            "log_sha256": logs[0]["log_sha256"],
+            "line_count": len(logs[0]["log_content"].splitlines()),
+            "git_commit": git_commit(),
+            "study_config": str(config_path),
+            "checks": checks,
+            "note": "Isolated smoke-test record; its run ID is automatically excluded from the final cohort.",
+        },
+    )
     print(f"[PASS] live GitHub check: {logs[0]['log_id']}")
     print(f"Preflight sample: {sample_path}")
     print("This sample run ID is isolated and will be excluded from the final cohort.")

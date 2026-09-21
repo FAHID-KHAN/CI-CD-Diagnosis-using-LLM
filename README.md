@@ -1,218 +1,92 @@
-# CI/CD Log Diagnosis with LLMs
+# Controlled CI/CD Failure Diagnosis Study
 
-Automated diagnosis of CI/CD pipeline failures using Large Language Models.
+This repository contains one thesis workflow: collect a fixed set of failed
+GitHub Actions logs, triage them with documented rules, create blind human
+ground truth, and compare one proprietary model with one open-weights model.
 
-Master's thesis project -- Tampere University.
+![Architecture](docs/architecture.png)
 
-## Features
+## Research conditions
 
-- **Controlled thesis comparison** -- OpenAI GPT-5.6 Terra (proprietary) versus gpt-oss-20b (open-weights, local via Ollama)
-- **Additional provider support** -- Anthropic and other OpenAI-compatible local models remain available outside the main experiment
-- **Smart log filtering** -- keyword-based filtering with tiktoken token counting and intelligent middle-out truncation (configurable token budget, default 12 000)
-- **Grounding verification** -- hallucination detection with exact + fuzzy matching (SequenceMatcher, threshold 0.75)
-- **Checkpoint/resume** -- diagnosis pipeline resumes from where it left off on interruption
-- **Cost tracking** -- per-request token usage and estimated USD cost from API response metadata (OpenAI, Anthropic, Ollama)
-- **Multi-model benchmarking** -- compare LLMs side-by-side on the same logs with cost, accuracy, and latency comparison
-- **Statistical significance tests** -- McNemar's test, bootstrap confidence intervals, paired permutation test for rigorous model comparison
-- **Cost-accuracy trade-off chart** -- auto-generated scatter plot showing each model's accuracy vs cost per diagnosis
-- **RAG system** -- ChromaDB + SentenceTransformers for documentation-augmented diagnosis (experimental)
+- Proprietary: `openai/gpt-5.6-terra`
+- Open-weights: `local/gpt-oss:20b` through Ollama
+- Shared reasoning effort: `medium`
+- Shared prompt, structured JSON schema, filtering and grounding logic
 
-## Project Structure
-
-```
-src/                        # Core library
-  api/                      # FastAPI diagnostic service
-    main.py                 #   Endpoints (/diagnose, /health, etc.)
-    models.py               #   Pydantic models & enums
-    filtering.py            #   Log filtering + tiktoken token counting
-    llm_service.py          #   LLM integration (OpenAI / Anthropic / Ollama)
-    grounding.py            #   Grounding verifier (exact + fuzzy matching)
-  data_collection/          # GitHub Actions log collector
-  evaluation/               # Metrics & ablation framework
-  rag/                      # RAG system (ChromaDB + docs)
-  human_study/              # Web-based user study interface
-  config.py                 # YAML config loader
-  log_setup.py              # Logging setup
-
-automated_scripts/          # CLI workflow scripts
-  data_collection.py        #   Collect logs from GitHub repos
-  triage.py                 #   Filter & deduplicate collected logs
-  diagnose_logs.py          #   Send logs to API for diagnosis (checkpoint/resume)
-  annotate.py               #   Annotate ground truth interactively
-  evaluate_demo.py          #   Generate evaluation report & charts
-  benchmark_models.py       #   Multi-model benchmark (direct LLM, no API)
-
-configs/                    # YAML configuration
-  api_config.yaml
-  rag_config.yaml
-  evaluation_config.yaml
-
-data/                       # Collected & annotated data
-  raw_logs/                 #   Raw logs from GitHub Actions
-  annotated_logs/           #   Diagnosed & annotated results
-
-tests/                      # Tests
-docs/                       # Documentation
-```
-
-## Quick Start
+## Setup
 
 ```bash
-# 1. Create virtual environment
-python -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
-
-# 2. Install
-pip install -e .
-
-# 3. Set environment variables
-cp .env.template .env
-# Edit .env with your OPENAI_API_KEY, GITHUB_TOKEN, etc.
-
-# 4. Start the API
-make run
-# -> http://localhost:8000/docs
+make install
 ```
 
-### Local Models (Ollama)
+Create `.env` from `.env.template` and add the required credentials. Never
+commit `.env`.
 
-To use local LLMs instead of cloud APIs:
+## Controlled workflow
+
+Prepare the fresh cohort:
 
 ```bash
-# Install Ollama (macOS)
-brew install ollama
-
-# Pull models
-ollama pull gpt-oss:20b
-
-# Start Ollama server (runs on port 11434)
-ollama serve
-
-# Diagnose with a local model
-curl -X POST http://localhost:8000/diagnose \
-  -H "Content-Type: application/json" \
-  -d '{"log_content": "...", "provider": "local", "model": "gpt-oss:20b", "reasoning_effort": "medium"}'
+./run_workflow.sh --skip-install
 ```
 
-## Workflow
+This performs the offline checks, one-log live preflight, fixed collection and
+auditable triage. It stops before human annotation.
 
-The maintained system and thesis dataflow are shown in
-[docs/architecture.png](docs/architecture.png).
-
-The full pipeline runs in 8 steps:
+Create blind ground truth:
 
 ```bash
-make collect     # 1. Collect failed CI/CD logs from GitHub
-make triage      # 2. Filter duplicates, cancelled runs, etc.
-make run         # 3. Start the diagnostic API (separate terminal)
-make diagnose    # 4. Send triaged logs to API for diagnosis
-make annotate    # 5. Manually annotate ground truth
-make evaluate    # 6. Generate evaluation report & charts
-make benchmark   # 7. Benchmark multiple LLMs side-by-side (cost + accuracy + stats)
+make annotate ANNOTATOR=your-stable-id
 ```
 
-Or use the all-in-one bash script:
+Run the mandatory five-log paired pilot:
 
 ```bash
-./run_workflow.sh                              # Full pipeline (steps 1-8)
-./run_workflow.sh --skip-collect --from 4      # Re-diagnose existing logs
-./run_workflow.sh --skip-annotate              # Non-interactive (reuse ground truth)
-./run_workflow.sh --only 8                     # Just run benchmark
-./run_workflow.sh --provider local --model gpt-oss:20b  # Use the thesis open-weight model
-./run_workflow.sh --study                     # Fresh thesis preflight + collection + triage
+make pilot
 ```
 
-Run `make help` to see all available commands.
-
-### Fresh thesis dataset
-
-The final thesis cohort uses the frozen protocol in
-`configs/thesis_fresh_2026.yaml`. It is intentionally separate from the
-legacy `batch1.json` workflow.
+After reviewing the pilot, run the frozen full cohort:
 
 ```bash
-# Validate configuration, environment, token presence, output path and storage
-make study-preflight
-
-# Download one isolated smoke-test log (never included in the final cohort)
-python automated_scripts/preflight_study.py \
-  --study-config configs/thesis_fresh_2026.yaml --live
-
-# Run the fixed six-repository collection once
-make study-collect
-
-# Produce eligible logs, exclusion records and a checksummed triage manifest
-make study-triage
+make final
 ```
 
-Study mode refuses to overwrite completed raw data. Use `--resume` only when a
-collection was genuinely interrupted. Generated study data lives under
-`data/studies/` and is excluded from Git; back it up separately after collection.
+The full final command and every validation gate are documented in the
+[controlled study runbook](docs/CONTROLLED_STUDY_RUNBOOK.md).
 
-## Multi-Model Benchmarking
+## Essential structure
 
-Compare different LLMs on the same set of logs:
+```text
+configs/thesis_fresh_2026.yaml       Fixed study protocol
+run_workflow.sh                      Cohort preparation entry point
+automated_scripts/
+  preflight_study.py                 Environment and one-log check
+  data_collection.py                 Immutable GitHub collection
+  triage.py                          Eligibility and exclusion audit
+  annotate_blind.py                  Model-independent ground truth
+  benchmark_models.py                Paired pilot and final experiment
+  study_utils.py                     Checksums and atomic storage
+src/
+  data_collection/                   GitHub Actions client
+  api/                               Filtering, model and grounding core
+  evaluation/                        Paired statistics and result chart
+tests/                               Offline tests
+docs/CONTROLLED_STUDY_RUNBOOK.md     Exact operating procedure
+```
+
+## Tests
 
 ```bash
-# Default thesis models (proprietary versus open-weights)
-python automated_scripts/benchmark_models.py
-
-# Custom model list
-python automated_scripts/benchmark_models.py \
-    --models openai/gpt-5.6-terra local/gpt-oss:20b \
-    --reasoning-effort medium
-
-# Required five-log pilot before the final run
-python automated_scripts/benchmark_models.py --pilot
-
-# With ground truth for accuracy scoring
-python automated_scripts/benchmark_models.py --ground-truth data/evaluation/ground_truth.json
+make test
 ```
 
-Results are saved to `results/benchmark/<timestamp>/` with per-model results, a comparison report, a printable summary table, and (when ground truth is provided) statistical significance tests and a cost-accuracy trade-off chart.
+Tests are offline and do not call GitHub, OpenAI or Ollama.
 
-### Benchmark Outputs
+## Data policy
 
-When ground truth is available, the benchmark automatically produces:
-
-| File | Description |
-|------|-------------|
-| `results_<provider>_<model>.json` | Raw per-log diagnosis results with token usage and cost |
-| `comparison_report.json` | Side-by-side metrics including cost and accuracy |
-| `comparison_table.txt` | Printable summary table |
-| `statistical_tests.json` | McNemar's test, bootstrap 95% CIs, permutation test |
-| `cost_accuracy_tradeoff.png` | Scatter plot: cost per diagnosis vs accuracy |
-
-## Diagnose a Single Log
-
-```python
-import requests
-
-response = requests.post(
-    "http://localhost:8000/diagnose",
-    json={
-        "log_content": "<paste log here>",
-        "provider": "openai",           # or "anthropic", "local"
-        "model": "gpt-5.6-terra",
-        "reasoning_effort": "medium",
-        "temperature": 0.0,              # ignored by thesis reasoning models
-        "use_filtering": True,
-        "repository": "owner/repo",          # optional context
-        "workflow_name": "CI Tests",          # optional context
-        "ci_system": "GitHub Actions",        # optional context
-    },
-)
-result = response.json()
-print(result["error_type"], result["root_cause"], result["suggested_fix"])
-```
-
-## Docker
-
-```bash
-docker-compose up --build
-```
-
-## Authors
-
-- Fahid Khan -- Tampere University
-- Supervisors: Jussi Rasku & Md Mahade Hasan
+Generated study data is stored under `data/studies/` and ignored by Git. Back
+up the full study directory separately after collection. Historical datasets
+under `data/_archive_*` are preserved but are not inputs to the controlled
+workflow.

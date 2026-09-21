@@ -1,17 +1,19 @@
 # filtering.py - Log filtering strategies
 
 import logging
-from typing import List
+from typing import Any, List
 
 logger = logging.getLogger(__name__)
 
+_encoder: Any = None
 try:
     import tiktoken
+
     # Both thesis models use an o200k-derived tokenizer family. Pinning the
     # encoding avoids token-count drift when a moving model alias changes.
     _encoder = tiktoken.get_encoding("o200k_base")
 except Exception:
-    _encoder = None
+    pass
 
 
 def _count_tokens(text: str) -> int:
@@ -25,9 +27,19 @@ class LogFilter:
     """Strategies for reducing log size before sending to LLM."""
 
     ERROR_KEYWORDS = [
-        'error', 'failed', 'failure', 'exception', 'fatal',
-        'critical', 'panic', 'traceback', 'stack trace',
-        'npm err!', 'gradle failed', 'maven error', 'pytest failed',
+        "error",
+        "failed",
+        "failure",
+        "exception",
+        "fatal",
+        "critical",
+        "panic",
+        "traceback",
+        "stack trace",
+        "npm err!",
+        "gradle failed",
+        "maven error",
+        "pytest failed",
     ]
 
     @staticmethod
@@ -71,15 +83,15 @@ class LogFilter:
         After line-based filtering, the result is further truncated to
         *max_tokens* so that the LLM prompt stays within context limits.
         """
-        lines = log_content.split('\n')
+        lines = log_content.split("\n")
 
         error_indices = LogFilter.filter_by_keywords(lines)
 
         if not error_indices:
             tail = lines[-max_lines:]
             start_idx = len(lines) - len(tail)
-            result = [f"[Line {start_idx + i}] {l}" for i, l in enumerate(tail)]
-            return LogFilter._truncate_to_tokens('\n'.join(result), max_tokens)
+            result = [f"[Line {start_idx + i + 1}] {line}" for i, line in enumerate(tail)]
+            return LogFilter._truncate_to_tokens("\n".join(result), max_tokens)
 
         contexts = LogFilter.get_context_window(lines, error_indices, window_size=window_size)
 
@@ -95,8 +107,8 @@ class LogFilter:
 
         filtered_lines.sort(key=lambda x: x[0])
 
-        result = [f"[Line {num}] {content}" for num, content in filtered_lines[:max_lines]]
-        return LogFilter._truncate_to_tokens('\n'.join(result), max_tokens)
+        result = [f"[Line {number + 1}] {content}" for number, content in filtered_lines[:max_lines]]
+        return LogFilter._truncate_to_tokens("\n".join(result), max_tokens)
 
     @staticmethod
     def _truncate_to_tokens(text: str, max_tokens: int) -> str:
@@ -109,13 +121,13 @@ class LogFilter:
         if token_count <= max_tokens:
             return text
 
-        lines = text.split('\n')
+        lines = text.split("\n")
         half = len(lines) // 2
         head = lines[:half]
         tail = lines[half:]
 
         # Trim from the middle: shorten head, then tail, until under budget
-        while _count_tokens('\n'.join(head + ['... [truncated] ...'] + tail)) > max_tokens:
+        while _count_tokens("\n".join(head + ["... [truncated] ..."] + tail)) > max_tokens:
             if len(head) > len(tail) and len(head) > 5:
                 head.pop()
             elif len(tail) > 5:
@@ -123,7 +135,11 @@ class LogFilter:
             else:
                 break
 
-        truncated = head + ['... [truncated] ...'] + tail
-        logger.info("Truncated log from %d to %d tokens (%d lines)",
-                    token_count, _count_tokens('\n'.join(truncated)), len(truncated))
-        return '\n'.join(truncated)
+        truncated = head + ["... [truncated] ..."] + tail
+        logger.info(
+            "Truncated log from %d to %d tokens (%d lines)",
+            token_count,
+            _count_tokens("\n".join(truncated)),
+            len(truncated),
+        )
+        return "\n".join(truncated)

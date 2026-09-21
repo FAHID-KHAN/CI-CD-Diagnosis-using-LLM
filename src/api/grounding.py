@@ -30,20 +30,20 @@ class GroundingVerifier:
         LLM cited.
         """
         if not evidence:
-            return False, 0.0
+            return True, 0.0
 
         # Build {original_line_number: content} from the filtered log
         line_map: dict[int, str] = {}
-        raw_lines = log_content.split('\n')
+        raw_lines = log_content.split("\n")
         for raw in raw_lines:
-            m = re.match(r'\[Line (\d+)\]\s?(.*)', raw)
+            m = re.match(r"\[Line (\d+)\]\s?(.*)", raw)
             if m:
                 line_map[int(m.group(1))] = m.group(2)
 
         # If the log was NOT filtered (no [Line N] markers), fall back to
         # a simple list where index == line number.
         if not line_map:
-            line_map = {i: line for i, line in enumerate(raw_lines)}
+            line_map = {i: line for i, line in enumerate(raw_lines, 1)}
 
         verified = 0
         for ev in evidence:

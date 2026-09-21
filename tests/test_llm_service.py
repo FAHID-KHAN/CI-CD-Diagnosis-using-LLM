@@ -9,7 +9,6 @@ import pytest
 from src.api.llm_service import DIAGNOSIS_RESPONSE_FORMAT, LLMDiagnoser
 from src.api.models import LLMProvider
 
-
 VALID_DIAGNOSIS = """{
   "error_type": "dependency_error",
   "failure_lines": [12],
@@ -39,9 +38,7 @@ def test_terra_uses_reasoning_and_strict_schema_without_temperature():
         reasoning_effort="medium",
     )
     create = AsyncMock(return_value=_response("gpt-5.6-terra"))
-    diagnoser._openai = SimpleNamespace(
-        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
-    )
+    diagnoser._openai = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
 
     result = asyncio.run(diagnoser.diagnose("[Line 12] ModuleNotFoundError: requests"))
 
@@ -61,9 +58,7 @@ def test_gpt_oss_uses_same_reasoning_and_schema_without_temperature():
         reasoning_effort="medium",
     )
     create = AsyncMock(return_value=_response("gpt-oss:20b"))
-    diagnoser._local = SimpleNamespace(
-        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
-    )
+    diagnoser._local = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
 
     asyncio.run(diagnoser.diagnose("[Line 12] ModuleNotFoundError: requests"))
 

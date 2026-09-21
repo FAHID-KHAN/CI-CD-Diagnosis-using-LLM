@@ -28,8 +28,6 @@ data/raw_logs/**/*.json
 !data/raw_logs/.gitkeep
 data/_archive_*/**
 data/studies/**
-chroma_db/*
-!chroma_db/.gitkeep
 *.db
 *.sqlite
 

@@ -1,7 +1,7 @@
-# models.py - Pydantic models and enums for the diagnostic API
+# Structured diagnosis models shared by both thesis conditions.
 
 from pydantic import BaseModel, ConfigDict, Field
-from typing import List, Literal
+from typing import List
 from enum import Enum
 
 
@@ -18,31 +18,7 @@ class ErrorType(str, Enum):
 
 class LLMProvider(str, Enum):
     OPENAI = "openai"
-    ANTHROPIC = "anthropic"
     LOCAL = "local"
-
-
-class DiagnosisRequest(BaseModel):
-    log_content: str = Field(..., description="Raw CI/CD log content")
-    provider: LLMProvider = Field(default=LLMProvider.OPENAI)
-    model: str = Field(default="gpt-5.6-terra")
-    temperature: float = Field(
-        default=0.0,
-        ge=0,
-        le=2,
-        description="Sampling temperature for non-reasoning models; ignored by the thesis reasoning models",
-    )
-    reasoning_effort: Literal["low", "medium", "high"] = Field(
-        default="medium",
-        description="Controlled reasoning level shared by the proprietary and open-weight thesis models",
-    )
-    use_filtering: bool = Field(default=True)
-    max_context_lines: int = Field(default=500)
-    # Optional metadata for context-enriched prompts
-    repository: str = Field(default="", description="Repository name (e.g. pytorch/pytorch)")
-    workflow_name: str = Field(default="", description="CI workflow name")
-    ci_system: str = Field(default="GitHub Actions", description="CI/CD platform")
-    run_url: str = Field(default="", description="URL to the failed run")
 
 
 class LogLine(BaseModel):
@@ -65,17 +41,3 @@ class LLMDiagnosis(BaseModel):
     confidence_score: float = Field(ge=0, le=1)
     grounded_evidence: List[LogLine]
     reasoning: str
-
-
-class DiagnosisResult(BaseModel):
-    log_id: str
-    error_type: ErrorType
-    failure_lines: List[int]
-    root_cause: str
-    suggested_fix: str
-    confidence_score: float = Field(ge=0, le=1)
-    grounded_evidence: List[LogLine]
-    reasoning: str
-    execution_time_ms: float
-    model_used: str
-    hallucination_detected: bool = False

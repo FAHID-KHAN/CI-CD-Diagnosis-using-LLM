@@ -13,7 +13,6 @@ from typing import Any
 
 import yaml
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -87,4 +86,3 @@ def git_commit() -> str | None:
         ).strip()
     except (OSError, subprocess.CalledProcessError):
         return None
-

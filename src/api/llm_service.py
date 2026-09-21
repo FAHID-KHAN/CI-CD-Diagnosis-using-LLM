@@ -7,7 +7,6 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-import anthropic
 import openai
 
 from src.api.models import LLMDiagnosis, LLMProvider
@@ -22,16 +21,10 @@ LLM_BACKOFF = 2.0
 # GPT-5.6 Terra source (verified 2026-09-21):
 # https://developers.openai.com/api/docs/models/gpt-5.6-terra
 PRICING = {
-    "gpt-5.6-terra":        {"input": 2.00 / 1_000_000, "output": 12.00 / 1_000_000},
-    "gpt-4o-mini":          {"input": 0.15 / 1_000_000, "output": 0.60 / 1_000_000},
-    "gpt-4o":               {"input": 2.50 / 1_000_000, "output": 10.0 / 1_000_000},
-    "gpt-3.5-turbo":        {"input": 0.50 / 1_000_000, "output": 1.50 / 1_000_000},
-    "claude-3-haiku-20240307":  {"input": 0.25 / 1_000_000, "output": 1.25 / 1_000_000},
-    "claude-3-sonnet-20240229": {"input": 3.00 / 1_000_000, "output": 15.0 / 1_000_000},
+    "gpt-5.6-terra": {"input": 2.00 / 1_000_000, "output": 12.00 / 1_000_000},
 }
 
 PRICING_AS_OF = "2026-09-21"
-REASONING_MODELS = ("gpt-5.6", "gpt-oss")
 
 
 DIAGNOSIS_RESPONSE_FORMAT = {
@@ -61,7 +54,7 @@ LOG CONTENT:
 
 Respond in JSON format:
 {{
-    "error_type": "dependency_error|test_failure|build_configuration|timeout|permission_denied|syntax_error|network_error|unknown",
+    "error_type": "one category permitted by the response schema",
     "failure_lines": [line numbers where errors occur],
     "root_cause": "Clear explanation of the underlying issue",
     "suggested_fix": "Specific, actionable steps to resolve the issue",
@@ -74,7 +67,7 @@ Respond in JSON format:
 
 
 class LLMDiagnoser:
-    """Thin wrapper around OpenAI / Anthropic for CI/CD log diagnosis."""
+    """Run either of the two fixed thesis model conditions."""
 
     # Default Ollama endpoint (OpenAI-compatible)
     OLLAMA_BASE_URL = "http://localhost:11434/v1"
@@ -95,6 +88,16 @@ class LLMDiagnoser:
             raise ValueError("reasoning_effort must be one of: low, medium, high")
         self.reasoning_effort = reasoning_effort
 
+        expected_models = {
+            LLMProvider.OPENAI: "gpt-5.6-terra",
+            LLMProvider.LOCAL: "gpt-oss:20b",
+        }
+        if expected_models.get(provider) != model:
+            raise ValueError(
+                f"Unsupported thesis condition: {provider.value}/{model}. "
+                "Use openai/gpt-5.6-terra or local/gpt-oss:20b."
+            )
+
         # Token usage from the most recent call
         self.last_usage: Dict[str, Any] = {}
         self.last_raw_response = ""
@@ -102,8 +105,6 @@ class LLMDiagnoser:
         # Build a reusable client once (instead of per-request)
         if provider == LLMProvider.OPENAI:
             self._openai = openai.AsyncOpenAI(api_key=api_key)
-        elif provider == LLMProvider.ANTHROPIC:
-            self._anthropic = anthropic.AsyncAnthropic(api_key=api_key)
         elif provider == LLMProvider.LOCAL:
             # Ollama exposes an OpenAI-compatible API at /v1
             self._local = openai.AsyncOpenAI(
@@ -145,7 +146,6 @@ class LLMDiagnoser:
     async def diagnose(
         self,
         log_content: str,
-        temperature: float = 0.0,
         repository: str = "",
         workflow_name: str = "",
         ci_system: str = "",
@@ -162,45 +162,36 @@ class LLMDiagnoser:
         for attempt in range(MAX_LLM_RETRIES):
             try:
                 if self.provider == LLMProvider.OPENAI:
-                    return await self._diagnose_openai(prompt, temperature)
-                elif self.provider == LLMProvider.ANTHROPIC:
-                    return await self._diagnose_anthropic(prompt, temperature)
-                elif self.provider == LLMProvider.LOCAL:
-                    return await self._diagnose_local(prompt, temperature)
-                else:
-                    raise ValueError(f"Unsupported LLM provider: {self.provider}")
-            except (openai.RateLimitError, anthropic.RateLimitError) as exc:
-                wait = LLM_BACKOFF ** attempt
-                logger.warning("Rate-limited (attempt %d/%d), retrying in %.1fs: %s",
-                               attempt + 1, MAX_LLM_RETRIES, wait, exc)
+                    return await self._diagnose_openai(prompt)
+                if self.provider == LLMProvider.LOCAL:
+                    return await self._diagnose_local(prompt)
+                raise ValueError(f"Unsupported LLM provider: {self.provider}")
+            except openai.RateLimitError as exc:
+                wait = LLM_BACKOFF**attempt
+                logger.warning(
+                    "Rate-limited (attempt %d/%d), retrying in %.1fs: %s", attempt + 1, MAX_LLM_RETRIES, wait, exc
+                )
                 await asyncio.sleep(wait)
-            except (openai.APIConnectionError, anthropic.APIConnectionError) as exc:
-                wait = LLM_BACKOFF ** attempt
-                logger.warning("Connection error (attempt %d/%d), retrying in %.1fs: %s",
-                               attempt + 1, MAX_LLM_RETRIES, wait, exc)
+            except openai.APIConnectionError as exc:
+                wait = LLM_BACKOFF**attempt
+                logger.warning(
+                    "Connection error (attempt %d/%d), retrying in %.1fs: %s", attempt + 1, MAX_LLM_RETRIES, wait, exc
+                )
                 await asyncio.sleep(wait)
 
         # Final attempt without catching
         if self.provider == LLMProvider.OPENAI:
-            return await self._diagnose_openai(prompt, temperature)
+            return await self._diagnose_openai(prompt)
         elif self.provider == LLMProvider.LOCAL:
-            return await self._diagnose_local(prompt, temperature)
-        return await self._diagnose_anthropic(prompt, temperature)
+            return await self._diagnose_local(prompt)
+        raise ValueError(f"Unsupported LLM provider: {self.provider}")
 
     # -- private ---------------------------------------------------------
 
     def _compute_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
         """Compute estimated USD cost for the most recent call."""
         rates = PRICING.get(self.model, {})
-        return (
-            prompt_tokens * rates.get("input", 0)
-            + completion_tokens * rates.get("output", 0)
-        )
-
-    @property
-    def uses_reasoning_effort(self) -> bool:
-        """Whether this experiment model uses reasoning controls instead of temperature."""
-        return self.model.startswith(REASONING_MODELS)
+        return prompt_tokens * rates.get("input", 0) + completion_tokens * rates.get("output", 0)
 
     @staticmethod
     def _parse_diagnosis(content: str) -> Dict[str, Any]:
@@ -208,7 +199,7 @@ class LLMDiagnoser:
         try:
             payload = json.loads(content)
         except json.JSONDecodeError:
-            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            json_match = re.search(r"\{.*\}", content, re.DOTALL)
             if not json_match:
                 raise
             payload = json.loads(json_match.group())
@@ -226,12 +217,12 @@ class LLMDiagnoser:
             "requested_model": self.model,
             "resolved_model": getattr(response, "model", None) or self.model,
             "provider": self.provider.value,
-            "reasoning_effort": self.reasoning_effort if self.uses_reasoning_effort else None,
-            "temperature_applied": None if self.uses_reasoning_effort else "provider_request",
+            "reasoning_effort": self.reasoning_effort,
+            "temperature_applied": None,
             "requested_at_utc": datetime.now(timezone.utc).isoformat(),
         }
 
-    async def _diagnose_openai(self, prompt: str, temperature: float) -> Dict[str, Any]:
+    async def _diagnose_openai(self, prompt: str) -> Dict[str, Any]:
         request: Dict[str, Any] = {
             "model": self.model,
             "messages": [
@@ -240,11 +231,8 @@ class LLMDiagnoser:
             ],
             "max_completion_tokens": self.max_tokens,
             "response_format": DIAGNOSIS_RESPONSE_FORMAT,
+            "reasoning_effort": self.reasoning_effort,
         }
-        if self.uses_reasoning_effort:
-            request["reasoning_effort"] = self.reasoning_effort
-        else:
-            request["temperature"] = temperature
 
         response = await self._openai.chat.completions.create(**request)
         usage = response.usage
@@ -254,22 +242,7 @@ class LLMDiagnoser:
         self.last_raw_response = response.choices[0].message.content
         return self._parse_diagnosis(self.last_raw_response)
 
-    async def _diagnose_anthropic(self, prompt: str, temperature: float) -> Dict[str, Any]:
-        response = await self._anthropic.messages.create(
-            model=self.model,
-            max_tokens=self.max_tokens,
-            temperature=temperature,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        usage = response.usage
-        pt = usage.input_tokens if usage else 0
-        ct = usage.output_tokens if usage else 0
-        self._set_usage(response, pt, ct, local=False)
-        content = response.content[0].text
-        self.last_raw_response = content
-        return self._parse_diagnosis(content)
-
-    async def _diagnose_local(self, prompt: str, temperature: float) -> Dict[str, Any]:
+    async def _diagnose_local(self, prompt: str) -> Dict[str, Any]:
         """Diagnose via Ollama (or any OpenAI-compatible local server).
 
         The thesis open-weight condition uses the same strict JSON schema and
@@ -283,11 +256,8 @@ class LLMDiagnoser:
             ],
             "max_tokens": self.max_tokens,
             "response_format": DIAGNOSIS_RESPONSE_FORMAT,
+            "reasoning_effort": self.reasoning_effort,
         }
-        if self.uses_reasoning_effort:
-            request["reasoning_effort"] = self.reasoning_effort
-        else:
-            request["temperature"] = temperature
 
         response = await self._local.chat.completions.create(**request)
         usage = response.usage

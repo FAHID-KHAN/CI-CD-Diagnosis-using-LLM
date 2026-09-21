@@ -1,40 +1,20 @@
 #!/usr/bin/env python3
-"""
-benchmark_models.py - Run the same logs through multiple LLMs and compare.
+"""Run the controlled paired-model thesis experiment.
 
-Uses LLMDiagnoser directly (no HTTP/API overhead) to benchmark each model
-on the same set of triaged logs.
-
-Usage:
-    # Compare the thesis proprietary and open-weight conditions
-    python automated_scripts/benchmark_models.py
-
-    # Custom model list
-    python automated_scripts/benchmark_models.py \
-        --models openai/gpt-5.6-terra local/gpt-oss:20b
-
-    # Limit to 10 logs for a quick test
-    python automated_scripts/benchmark_models.py --limit 10
-
-    # Use existing ground truth to compute accuracy
-    python automated_scripts/benchmark_models.py --ground-truth data/evaluation/ground_truth.json
-
-Output:
-    results/benchmark/<timestamp>/
-        results_<provider>_<model>.json   (per-model raw results)
-        comparison_report.json            (side-by-side metrics)
-        comparison_table.txt              (printable summary)
+The two model conditions, shared reasoning effort, prompt, response schema and
+filter limit are fixed in this file. Use ``--pilot`` for the required five-case
+check, then use a new output directory for the final run.
 """
 
+import argparse
 import asyncio
 import hashlib
+import importlib.metadata
 import json
 import os
-import sys
-import argparse
-import importlib.metadata
 import platform
 import subprocess
+import sys
 import time
 from collections import Counter
 from datetime import datetime, timezone
@@ -43,6 +23,7 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, parent_dir)
 
 from dotenv import load_dotenv
+
 load_dotenv(os.path.join(parent_dir, ".env"))
 
 from src.api.llm_service import DIAGNOSIS_PROMPT, DIAGNOSIS_RESPONSE_FORMAT, LLMDiagnoser
@@ -54,8 +35,6 @@ from src.evaluation.evaluation import (
     StatisticalTests,
     Visualizer,
 )
-from automated_scripts.pipeline_manifest import record_step
-
 
 # ── Default model configurations ──────────────────────────────────────────
 
@@ -63,51 +42,28 @@ DEFAULT_MODELS = [
     "openai/gpt-5.6-terra",
     "local/gpt-oss:20b",
 ]
+REASONING_EFFORT = "medium"
+MAX_FILTER_TOKENS = 12000
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Benchmark multiple LLMs on CI/CD log diagnosis")
+    parser = argparse.ArgumentParser(description="Run the fixed paired-model CI/CD diagnosis experiment")
+    parser.add_argument("--input", required=True, help="Frozen eligible cohort JSON")
     parser.add_argument(
-        "--models", nargs="+", default=DEFAULT_MODELS,
-        help="Models to benchmark in 'provider/model' format (e.g. openai/gpt-5.6-terra local/gpt-oss:20b)",
+        "--pilot",
+        action="store_true",
+        help="Run the required five-log pilot",
     )
-    parser.add_argument(
-        "--input", default=None,
-        help="Input JSON file (default: batch1_triaged.json or batch1.json)",
-    )
-    parser.add_argument("--limit", type=int, default=None, help="Max logs to process")
-    parser.add_argument(
-        "--pilot", action="store_true",
-        help="Run a five-log pilot (equivalent to --limit 5)",
-    )
-    parser.add_argument(
-        "--temperature", type=float, default=0.0,
-        help="Sampling temperature for legacy models; thesis reasoning models ignore it",
-    )
-    parser.add_argument(
-        "--reasoning-effort", choices=["low", "medium", "high"], default="medium",
-        help="Common reasoning level for both thesis models",
-    )
-    parser.add_argument(
-        "--ground-truth", default=None,
-        help="Ground truth JSON for accuracy computation",
-    )
-    parser.add_argument("--output-dir", default=None, help="Output directory")
-    parser.add_argument("--max-tokens", type=int, default=12000, help="Max tokens for log filtering")
+    parser.add_argument("--ground-truth", required=True, help="Blind ground-truth JSON")
+    parser.add_argument("--output-dir", required=True, help="Dedicated pilot or final output directory")
     return parser.parse_args()
 
 
 def resolve_input(args):
-    if args.input:
-        return args.input
-    triaged = os.path.join(parent_dir, "data/raw_logs/github_actions/batch1_triaged.json")
-    raw = os.path.join(parent_dir, "data/raw_logs/github_actions/batch1.json")
-    if os.path.exists(triaged):
-        return triaged
-    if os.path.exists(raw):
-        return raw
-    print("ERROR: No input logs found. Run data collection + triage first.")
-    sys.exit(1)
+    if not os.path.exists(args.input):
+        print(f"ERROR: Input cohort does not exist: {args.input}")
+        sys.exit(1)
+    return args.input
 
 
 def parse_model_spec(spec: str):
@@ -119,12 +75,11 @@ def parse_model_spec(spec: str):
     provider_str, model_name = parts
     provider_map = {
         "openai": LLMProvider.OPENAI,
-        "anthropic": LLMProvider.ANTHROPIC,
         "local": LLMProvider.LOCAL,
     }
     provider = provider_map.get(provider_str.lower())
     if provider is None:
-        print(f"ERROR: Unknown provider '{provider_str}'. Use: openai, anthropic, local")
+        print(f"ERROR: Unknown provider '{provider_str}'. Use: openai or local")
         sys.exit(1)
     return provider, model_name
 
@@ -133,8 +88,6 @@ def build_diagnoser(provider: LLMProvider, model: str, reasoning_effort: str) ->
     """Build an LLMDiagnoser with the right API key."""
     if provider == LLMProvider.OPENAI:
         api_key = os.getenv("OPENAI_API_KEY")
-    elif provider == LLMProvider.ANTHROPIC:
-        api_key = os.getenv("ANTHROPIC_API_KEY")
     else:
         api_key = None
     return LLMDiagnoser(
@@ -145,13 +98,12 @@ def build_diagnoser(provider: LLMProvider, model: str, reasoning_effort: str) ->
     )
 
 
-async def diagnose_one(diagnoser, filtered_log, log_entry, temperature):
+async def diagnose_one(diagnoser, filtered_log, log_entry):
     """Run a single diagnosis and return the result dict + timing."""
     start = time.time()
     try:
         result = await diagnoser.diagnose(
             filtered_log,
-            temperature=temperature,
             repository=log_entry.get("repository", ""),
             workflow_name=log_entry.get("workflow_name", ""),
             ci_system="GitHub Actions",
@@ -196,6 +148,36 @@ def _sha256_file(path):
     return digest.hexdigest()
 
 
+def validate_inputs(logs, annotations):
+    """Reject incomplete, duplicated, or stale ground truth before model calls."""
+    if not isinstance(logs, list) or not logs:
+        return "The eligible cohort must be a non-empty JSON list."
+    if not isinstance(annotations, list) or not annotations:
+        return "Ground truth must contain a non-empty annotations list."
+
+    log_ids = [item.get("log_id") for item in logs]
+    annotation_ids = [item.get("log_id") for item in annotations]
+    if None in log_ids or len(log_ids) != len(set(log_ids)):
+        return "The eligible cohort has missing or duplicate log IDs."
+    if None in annotation_ids or len(annotation_ids) != len(set(annotation_ids)):
+        return "Ground truth has missing or duplicate log IDs."
+
+    missing = sorted(set(log_ids) - set(annotation_ids))
+    unexpected = sorted(set(annotation_ids) - set(log_ids))
+    if missing or unexpected:
+        return f"Cohort/ground-truth ID mismatch (missing={missing}, unexpected={unexpected})."
+
+    annotation_map = {item["log_id"]: item for item in annotations}
+    stale = [
+        item["log_id"]
+        for item in logs
+        if item.get("log_sha256") and annotation_map[item["log_id"]].get("log_sha256") != item["log_sha256"]
+    ]
+    if stale:
+        return f"Ground truth was created from different log content: {stale}."
+    return None
+
+
 def collect_runtime_metadata(model_specs):
     """Capture enough environment detail to reproduce a thesis run."""
     metadata = {
@@ -209,23 +191,23 @@ def collect_runtime_metadata(model_specs):
         "prompt_sha256": hashlib.sha256(DIAGNOSIS_PROMPT.encode()).hexdigest(),
         "response_schema": DIAGNOSIS_RESPONSE_FORMAT,
     }
-    local_models = [
-        parse_model_spec(spec)[1]
-        for spec in model_specs
-        if spec.lower().startswith("local/")
-    ]
+    local_models = [parse_model_spec(spec)[1] for spec in model_specs if spec.lower().startswith("local/")]
     if local_models:
         metadata["ollama_version"] = _run_metadata_command(["ollama", "--version"])
         metadata["ollama_list"] = _run_metadata_command(["ollama", "list"])
         metadata["ollama_models"] = {
-            model: _run_metadata_command(["ollama", "show", model, "--verbose"])
-            for model in local_models
+            model: _run_metadata_command(["ollama", "show", model, "--verbose"]) for model in local_models
         }
     return metadata
 
 
 async def benchmark_model(
-    provider, model, logs, temperature, max_tokens, reasoning_effort, checkpoint_file,
+    provider,
+    model,
+    logs,
+    max_tokens,
+    reasoning_effort,
+    checkpoint_file,
 ):
     """Run all logs through one model with checkpoint/resume support."""
     diagnoser = build_diagnoser(provider, model, reasoning_effort)
@@ -259,51 +241,58 @@ async def benchmark_model(
         print(f"  [{i}/{len(logs)}] {repo} - {workflow}", end=" ", flush=True)
 
         diagnosis, elapsed_ms, error = await diagnose_one(
-            diagnoser, filtered, log_entry, temperature,
+            diagnoser,
+            filtered,
+            log_entry,
         )
 
         if diagnosis:
             usage = diagnoser.last_usage
             evidence = [LogLine(**ev) for ev in diagnosis.get("grounded_evidence", [])]
             hallucination_detected, grounding_score = GroundingVerifier.verify_evidence(
-                filtered, evidence,
+                filtered,
+                evidence,
             )
-            results.append({
-                "status": "success",
-                "log_id": log_id,
-                "repository": repo,
-                "workflow": workflow,
-                "model": label,
-                "error_type": diagnosis.get("error_type", "unknown"),
-                "root_cause": diagnosis.get("root_cause", ""),
-                "suggested_fix": diagnosis.get("suggested_fix", ""),
-                "confidence_score": diagnosis.get("confidence_score", 0),
-                "failure_lines": diagnosis.get("failure_lines", []),
-                "grounded_evidence": [ev.model_dump(mode="json") for ev in evidence],
-                "reasoning": diagnosis.get("reasoning", ""),
-                "execution_time_ms": elapsed_ms,
-                "grounding_score": grounding_score,
-                "hallucination_detected": hallucination_detected,
-                "prompt_tokens": usage.get("prompt_tokens", 0),
-                "completion_tokens": usage.get("completion_tokens", 0),
-                "total_tokens": usage.get("total_tokens", 0),
-                "cost_usd": usage.get("estimated_cost_usd", 0.0),
-                "request_metadata": usage,
-                "raw_response": diagnoser.last_raw_response,
-            })
+            results.append(
+                {
+                    "status": "success",
+                    "log_id": log_id,
+                    "repository": repo,
+                    "workflow": workflow,
+                    "model": label,
+                    "error_type": diagnosis.get("error_type", "unknown"),
+                    "root_cause": diagnosis.get("root_cause", ""),
+                    "suggested_fix": diagnosis.get("suggested_fix", ""),
+                    "confidence_score": diagnosis.get("confidence_score", 0),
+                    "failure_lines": diagnosis.get("failure_lines", []),
+                    "grounded_evidence": [ev.model_dump(mode="json") for ev in evidence],
+                    "reasoning": diagnosis.get("reasoning", ""),
+                    "execution_time_ms": elapsed_ms,
+                    "grounding_score": grounding_score,
+                    "hallucination_detected": hallucination_detected,
+                    "prompt_tokens": usage.get("prompt_tokens", 0),
+                    "completion_tokens": usage.get("completion_tokens", 0),
+                    "total_tokens": usage.get("total_tokens", 0),
+                    "cost_usd": usage.get("estimated_cost_usd", 0.0),
+                    "request_metadata": usage,
+                    "raw_response": diagnoser.last_raw_response,
+                }
+            )
             conf = diagnosis.get("confidence_score", 0)
-            print(f"OK  {diagnosis.get('error_type','?')} ({conf:.0%}) [{elapsed_ms:.0f}ms]")
+            print(f"OK  {diagnosis.get('error_type', '?')} ({conf:.0%}) [{elapsed_ms:.0f}ms]")
         else:
             print(f"FAIL  {error[:50] if error else '?'}")
-            results.append({
-                "status": "error",
-                "log_id": log_id,
-                "repository": repo,
-                "workflow": workflow,
-                "model": label,
-                "execution_time_ms": elapsed_ms,
-                "error": error or "Unknown diagnosis error",
-            })
+            results.append(
+                {
+                    "status": "error",
+                    "log_id": log_id,
+                    "repository": repo,
+                    "workflow": workflow,
+                    "model": label,
+                    "execution_time_ms": elapsed_ms,
+                    "error": error or "Unknown diagnosis error",
+                }
+            )
 
         save_checkpoint(checkpoint_file, results)
 
@@ -344,37 +333,28 @@ def compute_model_metrics(results, ground_truth=None):
         "avg_confidence": round(avg_confidence, 3),
         "avg_execution_time_ms": round(avg_time, 1),
         "error_type_distribution": error_dist,
-        "mean_grounding_score": round(
-            sum(r.get("grounding_score", 0) for r in successful) / n, 3
-        ) if n else 0.0,
-        "hallucination_rate": round(
-            sum(bool(r.get("hallucination_detected")) for r in successful) / n, 3
-        ) if n else 0.0,
+        "mean_grounding_score": round(sum(r.get("grounding_score", 0) for r in successful) / n, 3) if n else 0.0,
+        "hallucination_rate": (
+            round(sum(bool(r.get("hallucination_detected")) for r in successful) / n, 3) if n else 0.0
+        ),
         "total_tokens": sum(r.get("total_tokens", 0) for r in successful),
         "total_cost_usd": round(sum(r.get("cost_usd", 0) for r in successful), 6),
-        "cost_per_diagnosis_usd": round(
-            sum(r.get("cost_usd", 0) for r in successful) / n, 6
-        ) if n else 0.0,
+        "cost_per_diagnosis_usd": round(sum(r.get("cost_usd", 0) for r in successful) / n, 6) if n else 0.0,
     }
 
-    # If ground truth is available, compute accuracy
+    # Inference failures count as incorrect so this measures the complete
+    # diagnostic system, not only the subset of successful model calls.
     if ground_truth:
         gt_map = {a["log_id"]: a for a in ground_truth}
-        type_correct = 0
-        root_correct = 0
-        matched = 0
-        for r in successful:
-            gt = gt_map.get(r["log_id"])
-            if gt:
-                matched += 1
-                if r["error_type"] == gt["actual_error_type"]:
-                    type_correct += 1
-                # Root cause is harder to auto-evaluate; use GT flag if present
-                if gt.get("root_cause_correct"):
-                    root_correct += 1
-        if matched > 0:
-            metrics["matched_gt_logs"] = matched
-            metrics["error_type_accuracy"] = round(type_correct / matched, 3)
+        matched_results = [result for result in results if result.get("log_id") in gt_map]
+        type_correct = sum(
+            result.get("status", "success") == "success"
+            and result.get("error_type") == gt_map[result["log_id"]]["actual_error_type"]
+            for result in matched_results
+        )
+        if matched_results:
+            metrics["matched_gt_logs"] = len(matched_results)
+            metrics["error_type_accuracy"] = round(type_correct / len(matched_results), 3)
 
     return metrics
 
@@ -420,54 +400,76 @@ async def main():
     print("  Multi-Model Benchmark")
     print("=" * 70)
     print(f"  Input : {input_file}")
-    print(f"  Models: {', '.join(args.models)}")
-    print(f"  Reasoning effort: {args.reasoning_effort}")
-    print(f"  Legacy temperature: {args.temperature}")
+    print(f"  Models: {', '.join(DEFAULT_MODELS)}")
+    print(f"  Reasoning effort: {REASONING_EFFORT}")
     print()
 
     with open(input_file) as f:
         logs = json.load(f)
-    effective_limit = 5 if args.pilot else args.limit
-    if effective_limit:
-        logs = logs[: effective_limit]
-    print(f"  Logs to benchmark: {len(logs)}")
-    print()
 
-    # Load ground truth if provided
-    ground_truth = None
-    if args.ground_truth and os.path.exists(args.ground_truth):
-        with open(args.ground_truth) as f:
-            gt_data = json.load(f)
-        ground_truth = gt_data.get("annotations", gt_data if isinstance(gt_data, list) else [])
-        print(f"  Ground truth: {len(ground_truth)} annotations loaded")
-        print()
+    if not os.path.exists(args.ground_truth):
+        print(f"ERROR: Ground truth does not exist: {args.ground_truth}")
+        sys.exit(1)
+    with open(args.ground_truth) as f:
+        gt_data = json.load(f)
+    if isinstance(gt_data, dict):
+        ground_truth = gt_data.get("annotations", [])
+    elif isinstance(gt_data, list):
+        ground_truth = gt_data
+    else:
+        ground_truth = []
+    validation_error = validate_inputs(logs, ground_truth)
+    if validation_error:
+        print(f"ERROR: {validation_error}")
+        sys.exit(1)
+
+    if args.pilot:
+        logs = logs[:5]
+    print(f"  Logs to benchmark: {len(logs)}")
+    print(f"  Ground truth: {len(ground_truth)} annotations loaded")
+    print()
 
     # Prepare output directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    if args.output_dir:
-        out_dir = args.output_dir
-    else:
-        out_dir = os.path.join(parent_dir, "results", "benchmark", timestamp)
+    out_dir = args.output_dir
     os.makedirs(out_dir, exist_ok=True)
-
-    runtime_metadata = collect_runtime_metadata(args.models)
-    runtime_metadata["input_file"] = os.path.abspath(input_file)
-    runtime_metadata["input_sha256"] = _sha256_file(input_file)
-    runtime_metadata["log_filter"] = {
-        "max_lines": 500,
-        "window_size": 20,
-        "max_tokens": args.max_tokens,
+    metadata_path = os.path.join(out_dir, "run_metadata.json")
+    expected_identity = {
+        "input_sha256": _sha256_file(input_file),
+        "ground_truth_sha256": _sha256_file(args.ground_truth),
+        "pilot": args.pilot,
+        "models_requested": DEFAULT_MODELS,
     }
-    runtime_metadata["reasoning_effort"] = args.reasoning_effort
-    runtime_metadata["legacy_temperature"] = args.temperature
-    with open(os.path.join(out_dir, "run_metadata.json"), "w") as f:
-        json.dump(runtime_metadata, f, indent=2)
+    if os.path.exists(metadata_path):
+        with open(metadata_path) as f:
+            runtime_metadata = json.load(f)
+        mismatches = [key for key, value in expected_identity.items() if runtime_metadata.get(key) != value]
+        if mismatches:
+            print(f"ERROR: Output directory belongs to another run ({', '.join(mismatches)} differ).")
+            sys.exit(1)
+        print("  Resuming the matching benchmark directory.")
+    else:
+        if os.listdir(out_dir):
+            print("ERROR: Output directory is not empty and has no run metadata.")
+            sys.exit(1)
+        runtime_metadata = collect_runtime_metadata(DEFAULT_MODELS)
+        runtime_metadata.update(expected_identity)
+        runtime_metadata["input_file"] = os.path.abspath(input_file)
+        runtime_metadata["ground_truth_file"] = os.path.abspath(args.ground_truth)
+        runtime_metadata["log_filter"] = {
+            "max_lines": 500,
+            "window_size": 20,
+            "max_tokens": MAX_FILTER_TOKENS,
+        }
+        runtime_metadata["reasoning_effort"] = REASONING_EFFORT
+        with open(metadata_path, "w") as f:
+            json.dump(runtime_metadata, f, indent=2)
 
     # ── Run each model ────────────────────────────────────────────────
     all_results = {}
     all_metrics = {}
 
-    for model_spec in args.models:
+    for model_spec in DEFAULT_MODELS:
         provider, model_name = parse_model_spec(model_spec)
         label = f"{provider.value}/{model_name}"
         safe_name = model_spec.replace("/", "_").replace(":", "_")
@@ -482,9 +484,8 @@ async def main():
                 provider,
                 model_name,
                 logs,
-                args.temperature,
-                args.max_tokens,
-                args.reasoning_effort,
+                MAX_FILTER_TOKENS,
+                REASONING_EFFORT,
                 model_file,
             )
         except Exception as e:
@@ -512,8 +513,7 @@ async def main():
         "timestamp": timestamp,
         "input_file": input_file,
         "total_logs": len(logs),
-        "temperature": args.temperature,
-        "reasoning_effort": args.reasoning_effort,
+        "reasoning_effort": REASONING_EFFORT,
         "pilot": args.pilot,
         "runtime_metadata_file": "run_metadata.json",
         "models": all_metrics,
@@ -532,21 +532,22 @@ async def main():
         def _to_preds(results_list):
             preds = []
             for r in results_list:
-                if r.get("status", "success") != "success":
-                    continue
                 gt = gt_map.get(r["log_id"])
                 if gt:
-                    preds.append(PredictionResult(
-                        log_id=r["log_id"],
-                        predicted_error_type=r["error_type"],
-                        actual_error_type=gt["actual_error_type"],
-                        predicted_lines=r.get("failure_lines", []),
-                        actual_lines=gt.get("failure_lines", gt.get("actual_lines", [])),
-                        confidence=r["confidence_score"],
-                        hallucination_detected=r.get("hallucination_detected", False),
-                        execution_time_ms=r["execution_time_ms"],
-                        cost_usd=r.get("cost_usd", 0),
-                    ))
+                    succeeded = r.get("status", "success") == "success"
+                    preds.append(
+                        PredictionResult(
+                            log_id=r["log_id"],
+                            predicted_error_type=r.get("error_type", "__inference_error__"),
+                            actual_error_type=gt["actual_error_type"],
+                            predicted_lines=r.get("failure_lines", []),
+                            actual_lines=gt.get("failure_lines", gt.get("actual_lines", [])),
+                            confidence=r.get("confidence_score", 0.0),
+                            hallucination_detected=r.get("hallucination_detected", not succeeded),
+                            execution_time_ms=r["execution_time_ms"],
+                            cost_usd=r.get("cost_usd", 0),
+                        )
+                    )
             return preds
 
         # Pairwise McNemar's test between first two models
@@ -612,24 +613,6 @@ async def main():
 
     print(f"  Results saved to: {out_dir}/")
     print()
-
-    # Record in pipeline manifest
-    record_step(
-        step="benchmark",
-        config={
-            "models": args.models,
-            "temperature": args.temperature,
-            "reasoning_effort": args.reasoning_effort,
-            "pilot": args.pilot,
-        },
-        inputs={"logs": len(logs), "file": input_file},
-        outputs={
-            "models_benchmarked": len(all_metrics),
-            "output_dir": out_dir,
-            **{f"{k}_diagnosed": m.get("total_logs", 0) for k, m in all_metrics.items()},
-        },
-        notes=f"{len(all_metrics)} models benchmarked on {len(logs)} logs",
-    )
 
 
 if __name__ == "__main__":
