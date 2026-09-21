@@ -1,6 +1,7 @@
 # data_collection.py - Tools for collecting and annotating CI/CD logs
 
 import io
+import hashlib
 import json
 import logging
 import re
@@ -8,7 +9,7 @@ import sqlite3
 import time
 import zipfile
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -81,13 +82,22 @@ class GitHubActionsCollector:
             logger.error("Error searching repositories: %s", e)
         return repos
     
-    def collect_logs_from_repo(self, owner: str, repo: str, num_logs: int = 50) -> List[Dict]:
+    def collect_logs_from_repo(
+        self,
+        owner: str,
+        repo: str,
+        num_logs: int = 50,
+        exclude_run_ids: Optional[set[int]] = None,
+    ) -> List[Dict]:
         """Collect failed logs from a specific GitHub repository"""
         collected_logs = []
-        runs = self.get_workflow_runs(owner, repo, max_runs=num_logs)
+        excluded = exclude_run_ids or set()
+        runs = self.get_workflow_runs(owner, repo, max_runs=num_logs + len(excluded))
         for run in runs:
             if len(collected_logs) >= num_logs:
                 break
+            if run['id'] in excluded:
+                continue
             log_content = self.download_log(owner, repo, run['id'])
             if log_content:
                 collected_logs.append({
@@ -96,8 +106,17 @@ class GitHubActionsCollector:
                     'repository': f"{owner}/{repo}",
                     'workflow_name': run.get('name', ''),
                     'run_id': run['id'],
+                    'run_attempt': run.get('run_attempt'),
+                    'event': run.get('event', ''),
+                    'status': run.get('status', ''),
+                    'conclusion': run.get('conclusion', ''),
+                    'commit_sha': run.get('head_sha', ''),
                     'log_content': log_content,
+                    'log_sha256': hashlib.sha256(log_content.encode('utf-8')).hexdigest(),
+                    'collected_at': datetime.now(timezone.utc).isoformat(),
                     'created_at': run.get('created_at', ''),
+                    'run_started_at': run.get('run_started_at', ''),
+                    'updated_at': run.get('updated_at', ''),
                     'url': run.get('html_url', '')
                 })
                 logger.info("Collected log %d/%d", len(collected_logs), num_logs)
@@ -126,10 +145,14 @@ class GitHubActionsCollector:
                         break
                     page += 1
                 else:
-                    break
+                    message = response.text[:300].replace("\n", " ")
+                    raise RuntimeError(
+                        f"GitHub workflow-runs API returned HTTP {response.status_code} "
+                        f"for {owner}/{repo}: {message}"
+                    )
             except Exception as e:
                 logger.error("Error fetching workflow runs: %s", e)
-                break
+                raise
         return runs[:max_runs]
     
     def download_log(self, owner: str, repo: str, run_id: int) -> Optional[str]:
@@ -150,6 +173,14 @@ class GitHubActionsCollector:
                         return "\n".join(parts) if parts else None
                 except Exception:
                     return response.text
+            logger.warning(
+                "GitHub log API returned HTTP %d for %s/%s run %d: %s",
+                response.status_code,
+                owner,
+                repo,
+                run_id,
+                response.text[:200].replace("\n", " "),
+            )
         except Exception as e:
             logger.error("Error downloading log for %s/%s run %d: %s", owner, repo, run_id, e)
         return None

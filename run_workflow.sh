@@ -22,6 +22,9 @@
 #    ./run_workflow.sh --only 8        # Run only step 8 (benchmark)
 #    ./run_workflow.sh --provider local --model gpt-oss:20b  # Use local open-weight model
 #    ./run_workflow.sh --benchmark-models "openai/gpt-5.6-terra local/gpt-oss:20b"
+#    ./run_workflow.sh --study        # Preflight, collect and triage fresh thesis data
+#    ./run_workflow.sh --study --skip-live-preflight  # Offline checks only before collection
+#    ./run_workflow.sh --study --resume-collect       # Resume an interrupted collection
 #    ./run_workflow.sh --help          # Show this help
 #
 # ==========================================================================
@@ -77,9 +80,14 @@ PROVIDER="openai"
 REASONING_EFFORT="medium"
 LIMIT=""
 BENCHMARK_MODELS=""
+STUDY_MODE=false
+STUDY_CONFIG="configs/thesis_fresh_2026.yaml"
+SKIP_LIVE_PREFLIGHT=false
+RESUME_COLLECT=false
+OVERWRITE_TRIAGE=false
 
 usage() {
-    head -25 "$0" | tail -18 | sed 's/^#//;s/^ //'
+    sed -n '6,28p' "$0" | sed 's/^#//;s/^ //'
     exit 0
 }
 
@@ -96,6 +104,11 @@ while [[ $# -gt 0 ]]; do
         --reasoning-effort) REASONING_EFFORT="$2"; shift 2 ;;
         --limit)         LIMIT="$2"; shift 2 ;;
         --benchmark-models) BENCHMARK_MODELS="$2"; shift 2 ;;
+        --study)          STUDY_MODE=true; shift ;;
+        --study-config)   STUDY_CONFIG="$2"; shift 2 ;;
+        --skip-live-preflight) SKIP_LIVE_PREFLIGHT=true; shift ;;
+        --resume-collect) RESUME_COLLECT=true; shift ;;
+        --overwrite-triage) OVERWRITE_TRIAGE=true; shift ;;
         --port)          API_PORT="$2"; API_URL="http://localhost:${API_PORT}"; shift 2 ;;
         --help|-h)       usage ;;
         *) warn "Unknown option: $1"; shift ;;
@@ -120,7 +133,11 @@ echo "| |     | || (__|  _/  | |) | / _\` / _\` | ' \\/ _ (_-</ _| (_-<"
 echo "|_|     |_| \\___|_|    |___/|_\\__,_\\__, |_||_\\___/__/\\__|_/__/"
 echo "                                   |___/"
 echo -e "${NC}"
-echo -e "  Model: ${PROVIDER}/${MODEL}   Reasoning: ${REASONING_EFFORT}   Port: ${API_PORT}"
+if [[ "${STUDY_MODE}" == true ]]; then
+    echo -e "  Mode: fresh thesis dataset   Protocol: ${STUDY_CONFIG}"
+else
+    echo -e "  Mode: legacy full pipeline   Model: ${PROVIDER}/${MODEL}   Reasoning: ${REASONING_EFFORT}   Port: ${API_PORT}"
+fi
 echo ""
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -135,7 +152,11 @@ if should_run 1; then
         # Create venv if it doesn't exist
         if [[ ! -d "${VENV_DIR}" ]]; then
             info "Creating virtual environment at ${VENV_DIR}..."
-            python3 -m venv "${VENV_DIR}"
+            if command -v python3.12 &>/dev/null; then
+                python3.12 -m venv "${VENV_DIR}"
+            else
+                python3 -m venv "${VENV_DIR}"
+            fi
         fi
 
         # Activate venv
@@ -143,7 +164,7 @@ if should_run 1; then
         source "${VENV_DIR}/bin/activate"
 
         info "Installing project in editable mode..."
-        pip install -e . --quiet 2>&1 | tail -3
+        python -m pip install -e '.[dev]' --quiet 2>&1 | tail -3
         success "Dependencies installed."
     fi
 else
@@ -160,10 +181,36 @@ fi
 # Step 2: Collect CI/CD logs
 # ══════════════════════════════════════════════════════════════════════════
 if should_run 2; then
-    banner 2 "Collect CI/CD Logs from GitHub Actions"
+    if [[ "${STUDY_MODE}" == true ]]; then
+        banner 2 "Preflight and Collect Fresh Thesis Dataset"
+    else
+        banner 2 "Collect CI/CD Logs from GitHub Actions"
+    fi
 
     if [[ "${SKIP_COLLECT}" == true ]]; then
         warn "Skipping collection (--skip-collect)."
+    elif [[ "${STUDY_MODE}" == true ]]; then
+        [[ -f "${STUDY_CONFIG}" ]] || fail "Study protocol not found: ${STUDY_CONFIG}"
+
+        PREFLIGHT_ARGS=(--study-config "${STUDY_CONFIG}")
+        if [[ "${RESUME_COLLECT}" == true ]]; then
+            PREFLIGHT_ARGS+=(--allow-existing-output)
+            warn "Resume mode: reusing the previously completed live preflight."
+        elif [[ "${SKIP_LIVE_PREFLIGHT}" == false ]]; then
+            PREFLIGHT_ARGS+=(--live)
+            info "Running offline checks and isolated one-log GitHub preflight..."
+        else
+            warn "Skipping the live one-log check; running offline preflight only."
+        fi
+        python automated_scripts/preflight_study.py "${PREFLIGHT_ARGS[@]}"
+
+        COLLECT_ARGS=(--study-config "${STUDY_CONFIG}")
+        if [[ "${RESUME_COLLECT}" == true ]]; then
+            COLLECT_ARGS+=(--resume)
+        fi
+        info "Collecting the fixed repository cohort from the study protocol..."
+        python automated_scripts/data_collection.py "${COLLECT_ARGS[@]}"
+        success "Fresh study collection complete."
     else
         # Check for GitHub token
         if [[ -z "${GITHUB_TOKEN:-}" ]]; then
@@ -203,26 +250,69 @@ fi
 # Step 3: Triage collected logs
 # ══════════════════════════════════════════════════════════════════════════
 if should_run 3; then
-    banner 3 "Triage Collected Logs"
+    if [[ "${STUDY_MODE}" == true ]]; then
+        banner 3 "Triage and Audit Fresh Thesis Dataset"
 
-    RAW_LOG_FILE="${PROJECT_DIR}/data/raw_logs/github_actions/batch1.json"
-    TRIAGED_FILE="${PROJECT_DIR}/data/raw_logs/github_actions/batch1_triaged.json"
+        [[ -f "${STUDY_CONFIG}" ]] || fail "Study protocol not found: ${STUDY_CONFIG}"
+        STUDY_ID=$(python -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))["study_id"])' "${STUDY_CONFIG}")
+        STUDY_ROOT="${PROJECT_DIR}/data/studies/${STUDY_ID}"
+        STUDY_RAW="${STUDY_ROOT}/raw/logs.json"
+        STUDY_TRIAGED="${STUDY_ROOT}/triaged/eligible_logs.json"
+        STUDY_EXCLUDED="${STUDY_ROOT}/excluded/excluded_logs.json"
 
-    if [[ ! -f "${RAW_LOG_FILE}" ]]; then
-        fail "No raw logs found at ${RAW_LOG_FILE}. Run step 2 first."
-    fi
+        [[ -f "${STUDY_RAW}" ]] || fail "No fresh raw study data found at ${STUDY_RAW}. Run step 2 first."
 
-    info "Running triage on collected logs..."
-    python automated_scripts/triage.py --input "${RAW_LOG_FILE}"
+        if [[ -f "${STUDY_TRIAGED}" && "${OVERWRITE_TRIAGE}" == false ]]; then
+            warn "Study triage already exists; preserving it. Use --overwrite-triage for an intentional rerun."
+        else
+            TRIAGE_ARGS=(--study-config "${STUDY_CONFIG}")
+            if [[ "${OVERWRITE_TRIAGE}" == true ]]; then
+                TRIAGE_ARGS+=(--overwrite)
+            fi
+            python automated_scripts/triage.py "${TRIAGE_ARGS[@]}"
+        fi
 
-    if [[ -f "${TRIAGED_FILE}" ]]; then
-        TRIAGED_COUNT=$(python3 -c "import json; print(len(json.load(open('${TRIAGED_FILE}'))))")
-        success "Triage complete: ${TRIAGED_COUNT} logs passed filters."
+        ELIGIBLE_COUNT=$(python -c 'import json, sys; print(len(json.load(open(sys.argv[1]))))' "${STUDY_TRIAGED}")
+        EXCLUDED_COUNT=$(python -c 'import json, sys; print(len(json.load(open(sys.argv[1]))))' "${STUDY_EXCLUDED}")
+        success "Study triage complete: ${ELIGIBLE_COUNT} eligible, ${EXCLUDED_COUNT} excluded."
     else
-        fail "Triage did not produce output file."
+        banner 3 "Triage Collected Logs"
+
+        RAW_LOG_FILE="${PROJECT_DIR}/data/raw_logs/github_actions/batch1.json"
+        TRIAGED_FILE="${PROJECT_DIR}/data/raw_logs/github_actions/batch1_triaged.json"
+
+        if [[ ! -f "${RAW_LOG_FILE}" ]]; then
+            fail "No raw logs found at ${RAW_LOG_FILE}. Run step 2 first."
+        fi
+
+        info "Running triage on collected logs..."
+        python automated_scripts/triage.py --input "${RAW_LOG_FILE}"
+
+        if [[ -f "${TRIAGED_FILE}" ]]; then
+            TRIAGED_COUNT=$(python3 -c "import json; print(len(json.load(open('${TRIAGED_FILE}'))))")
+            success "Triage complete: ${TRIAGED_COUNT} logs passed filters."
+        else
+            fail "Triage did not produce output file."
+        fi
     fi
 else
     info "Skipping step 3 (triage)."
+fi
+
+# The fresh-study workflow intentionally stops after cohort construction.
+# Blind ground-truth annotation and final paired experiments are separate,
+# controlled phases and must never fall through to the legacy batch1 pipeline.
+if [[ "${STUDY_MODE}" == true ]]; then
+    echo ""
+    echo -e "${BOLD}════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}${BOLD}  Fresh Dataset Preparation Complete${NC}"
+    echo -e "${BOLD}════════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    if [[ -n "${STUDY_ROOT:-}" && -f "${STUDY_ROOT}/collection_manifest.json" ]]; then
+        info "Study directory: ${STUDY_ROOT}"
+        info "Next controlled phase: blind ground-truth annotation."
+    fi
+    exit 0
 fi
 
 # ══════════════════════════════════════════════════════════════════════════

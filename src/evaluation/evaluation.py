@@ -2,7 +2,7 @@
 
 import json
 import numpy as np
-from typing import List, Dict, Tuple, Optional
+from typing import Any, List, Dict, Tuple, Optional
 from dataclasses import dataclass, field
 from sklearn.metrics import precision_recall_fscore_support, confusion_matrix
 import matplotlib.pyplot as plt

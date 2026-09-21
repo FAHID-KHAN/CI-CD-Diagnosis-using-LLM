@@ -5,6 +5,8 @@ __pycache__/
 *.so
 .Python
 venv/
+.venv/
+.venv_old/
 env/
 ENV/
 build/
@@ -25,6 +27,7 @@ dist/
 data/raw_logs/**/*.json
 !data/raw_logs/.gitkeep
 data/_archive_*/**
+data/studies/**
 chroma_db/*
 !chroma_db/.gitkeep
 *.db

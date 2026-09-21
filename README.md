@@ -96,6 +96,9 @@ curl -X POST http://localhost:8000/diagnose \
 
 ## Workflow
 
+The maintained system and thesis dataflow diagrams are in
+[docs/architecture.md](docs/architecture.md).
+
 The full pipeline runs in 8 steps:
 
 ```bash
@@ -116,9 +119,35 @@ Or use the all-in-one bash script:
 ./run_workflow.sh --skip-annotate              # Non-interactive (reuse ground truth)
 ./run_workflow.sh --only 8                     # Just run benchmark
 ./run_workflow.sh --provider local --model gpt-oss:20b  # Use the thesis open-weight model
+./run_workflow.sh --study                     # Fresh thesis preflight + collection + triage
 ```
 
 Run `make help` to see all available commands.
+
+### Fresh thesis dataset
+
+The final thesis cohort uses the frozen protocol in
+`configs/thesis_fresh_2026.yaml`. It is intentionally separate from the
+legacy `batch1.json` workflow.
+
+```bash
+# Validate configuration, environment, token presence, output path and storage
+make study-preflight
+
+# Download one isolated smoke-test log (never included in the final cohort)
+python automated_scripts/preflight_study.py \
+  --study-config configs/thesis_fresh_2026.yaml --live
+
+# Run the fixed six-repository collection once
+make study-collect
+
+# Produce eligible logs, exclusion records and a checksummed triage manifest
+make study-triage
+```
+
+Study mode refuses to overwrite completed raw data. Use `--resume` only when a
+collection was genuinely interrupted. Generated study data lives under
+`data/studies/` and is excluded from Git; back it up separately after collection.
 
 ## Multi-Model Benchmarking
 

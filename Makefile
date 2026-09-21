@@ -1,6 +1,6 @@
 # Makefile for CI/CD Diagnosis Project
 
-.PHONY: help install run test collect triage diagnose annotate evaluate benchmark docker clean
+.PHONY: help install run test collect triage study-preflight study-collect study-triage diagnose annotate evaluate benchmark docker clean
 
 help:
 	@echo "Available commands:"
@@ -9,6 +9,9 @@ help:
 	@echo "  make test       - Run tests"
 	@echo "  make collect    - Collect CI/CD logs from GitHub"
 	@echo "  make triage     - Triage collected logs"
+	@echo "  make study-preflight - Validate the fresh thesis study"
+	@echo "  make study-collect   - Collect the fresh thesis dataset"
+	@echo "  make study-triage    - Triage the fresh thesis dataset"
 	@echo "  make diagnose   - Diagnose logs via API"
 	@echo "  make annotate   - Annotate diagnosed logs (ground truth)"
 	@echo "  make evaluate   - Run demonstration evaluation"
@@ -30,6 +33,15 @@ collect:
 
 triage:
 	python automated_scripts/triage.py
+
+study-preflight:
+	python automated_scripts/preflight_study.py --study-config configs/thesis_fresh_2026.yaml
+
+study-collect:
+	python automated_scripts/data_collection.py --study-config configs/thesis_fresh_2026.yaml
+
+study-triage:
+	python automated_scripts/triage.py --study-config configs/thesis_fresh_2026.yaml
 
 diagnose:
 	python automated_scripts/diagnose_logs.py

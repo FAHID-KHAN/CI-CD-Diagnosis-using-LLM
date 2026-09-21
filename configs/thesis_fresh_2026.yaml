@@ -1,0 +1,50 @@
+study_id: thesis_fresh_2026
+title: Fresh multi-repository GitHub Actions failure dataset
+source: github_actions
+unit_of_analysis: failed_workflow_run
+sampling_method: latest_failed_runs_per_repository
+auto_discovery: false
+target_raw_logs: 90
+target_eligible_logs:
+  minimum: 50
+  maximum: 70
+
+repositories:
+  - name: pytorch/pytorch
+    max_logs: 15
+    ecosystem: python
+  - name: django/django
+    max_logs: 15
+    ecosystem: python
+  - name: facebook/react
+    max_logs: 15
+    ecosystem: javascript_typescript
+  - name: vercel/next.js
+    max_logs: 15
+    ecosystem: javascript_typescript
+  - name: spring-projects/spring-boot
+    max_logs: 15
+    ecosystem: jvm
+  - name: gradle/gradle
+    max_logs: 15
+    ecosystem: jvm
+
+eligibility:
+  required_conclusion: failure
+  minimum_log_lines: 20
+  maximum_duplicate_error_signatures_per_repository: 2
+  require_downloadable_log: true
+
+exclusions:
+  - cancelled_run
+  - token_error
+  - too_short
+  - duplicate_error
+  - unavailable_log
+
+research_controls:
+  use_fixed_repository_list: true
+  preserve_raw_logs: true
+  blind_annotation: true
+  do_not_tune_on_final_dataset: true
+

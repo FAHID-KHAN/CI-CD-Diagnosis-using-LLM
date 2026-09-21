@@ -37,6 +37,27 @@ Alternatively, run the full pipeline with a single script:
 ./run_workflow.sh --model gpt-5.6-terra --reasoning-effort medium --limit 10
 ```
 
+## Fresh thesis dataset workflow
+
+The thesis cohort is built from the fixed protocol in
+`configs/thesis_fresh_2026.yaml`. This mode stops after collection and triage so
+it cannot accidentally feed final-study data into the legacy annotation path.
+
+```bash
+# Install, run offline and live preflight, collect, and triage
+./run_workflow.sh --study
+
+# Resume a genuinely interrupted collection
+./run_workflow.sh --study --from 2 --resume-collect
+
+# Triage an already collected study
+./run_workflow.sh --study --only 3
+```
+
+The generated cohort, checksums, manifests, eligible records and exclusion
+audit trail are written to `data/studies/thesis_fresh_2026/`. The architecture
+and complete dataflow are documented in [architecture.md](architecture.md).
+
 ### 1. Collect logs
 
 ```bash
@@ -116,7 +137,8 @@ These are loaded by `src/config.py`.
 - **Baselines show 0%**: Ground truth log IDs don't match the current raw data (likely caused by re-collecting). Re-annotate with `make annotate` to fix.
 - **API 500 errors**: Check that `OPENAI_API_KEY` is set and valid in `.env`.
 - **sentence-transformers fails**: Install `torch` first: `pip install --index-url https://download.pytorch.org/whl/cpu torch`
-- **Tests call real LLM APIs**: Tests require the API running with valid keys. Consider adding a mock provider for CI.
+- **GitHub returns HTTP 401**: Replace the expired or invalid `GITHUB_TOKEN` in `.env`.
+- **Offline tests**: Model calls are mocked; the test suite does not require API access.
 
 ## File Locations
 
