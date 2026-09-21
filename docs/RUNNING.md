@@ -56,7 +56,7 @@ it cannot accidentally feed final-study data into the legacy annotation path.
 
 The generated cohort, checksums, manifests, eligible records and exclusion
 audit trail are written to `data/studies/thesis_fresh_2026/`. The architecture
-and complete dataflow are documented in [architecture.md](architecture.md).
+and complete dataflow are shown in [architecture.png](architecture.png).
 
 ### 1. Collect logs
 

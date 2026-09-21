@@ -96,8 +96,8 @@ curl -X POST http://localhost:8000/diagnose \
 
 ## Workflow
 
-The maintained system and thesis dataflow diagrams are in
-[docs/architecture.md](docs/architecture.md).
+The maintained system and thesis dataflow are shown in
+[docs/architecture.png](docs/architecture.png).
 
 The full pipeline runs in 8 steps:
 
