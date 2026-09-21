@@ -4,12 +4,13 @@ import asyncio
 import json
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import anthropic
 import openai
 
-from src.api.models import LLMProvider
+from src.api.models import LLMDiagnosis, LLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -17,14 +18,29 @@ MAX_LLM_RETRIES = 3
 LLM_BACKOFF = 2.0
 
 # ── Per-token pricing (USD) ────────────────────────────────────────────
-# Source: https://openai.com/api/pricing  /  https://docs.anthropic.com/
-# Update these when pricing changes.
+# Prices are recorded for reproducibility and should be frozen for a thesis run.
+# GPT-5.6 Terra source (verified 2026-09-21):
+# https://developers.openai.com/api/docs/models/gpt-5.6-terra
 PRICING = {
+    "gpt-5.6-terra":        {"input": 2.00 / 1_000_000, "output": 12.00 / 1_000_000},
     "gpt-4o-mini":          {"input": 0.15 / 1_000_000, "output": 0.60 / 1_000_000},
     "gpt-4o":               {"input": 2.50 / 1_000_000, "output": 10.0 / 1_000_000},
     "gpt-3.5-turbo":        {"input": 0.50 / 1_000_000, "output": 1.50 / 1_000_000},
     "claude-3-haiku-20240307":  {"input": 0.25 / 1_000_000, "output": 1.25 / 1_000_000},
     "claude-3-sonnet-20240229": {"input": 3.00 / 1_000_000, "output": 15.0 / 1_000_000},
+}
+
+PRICING_AS_OF = "2026-09-21"
+REASONING_MODELS = ("gpt-5.6", "gpt-oss")
+
+
+DIAGNOSIS_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "cicd_failure_diagnosis",
+        "strict": True,
+        "schema": LLMDiagnosis.model_json_schema(),
+    },
 }
 
 SYSTEM_MESSAGE = "You are an expert DevOps engineer."
@@ -70,13 +86,18 @@ class LLMDiagnoser:
         api_key: Optional[str] = None,
         max_tokens: int = 4096,
         base_url: Optional[str] = None,
+        reasoning_effort: str = "medium",
     ):
         self.provider = provider
         self.model = model
         self.max_tokens = max_tokens
+        if reasoning_effort not in {"low", "medium", "high"}:
+            raise ValueError("reasoning_effort must be one of: low, medium, high")
+        self.reasoning_effort = reasoning_effort
 
         # Token usage from the most recent call
         self.last_usage: Dict[str, Any] = {}
+        self.last_raw_response = ""
 
         # Build a reusable client once (instead of per-request)
         if provider == LLMProvider.OPENAI:
@@ -124,7 +145,7 @@ class LLMDiagnoser:
     async def diagnose(
         self,
         log_content: str,
-        temperature: float = 0.1,
+        temperature: float = 0.0,
         repository: str = "",
         workflow_name: str = "",
         ci_system: str = "",
@@ -176,26 +197,62 @@ class LLMDiagnoser:
             + completion_tokens * rates.get("output", 0)
         )
 
+    @property
+    def uses_reasoning_effort(self) -> bool:
+        """Whether this experiment model uses reasoning controls instead of temperature."""
+        return self.model.startswith(REASONING_MODELS)
+
+    @staticmethod
+    def _parse_diagnosis(content: str) -> Dict[str, Any]:
+        """Parse and validate the common structured diagnosis contract."""
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError:
+            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            if not json_match:
+                raise
+            payload = json.loads(json_match.group())
+        return LLMDiagnosis.model_validate(payload).model_dump(mode="json")
+
+    def _set_usage(self, response: Any, prompt_tokens: int, completion_tokens: int, *, local: bool) -> None:
+        """Store reproducibility and cost metadata for the most recent request."""
+        self.last_usage = {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
+            "estimated_cost_usd": 0.0 if local else self._compute_cost(prompt_tokens, completion_tokens),
+            "pricing_as_of": PRICING_AS_OF if self.model == "gpt-5.6-terra" else None,
+            "cost_basis": "zero_marginal_api_cost" if local else "published_token_pricing",
+            "requested_model": self.model,
+            "resolved_model": getattr(response, "model", None) or self.model,
+            "provider": self.provider.value,
+            "reasoning_effort": self.reasoning_effort if self.uses_reasoning_effort else None,
+            "temperature_applied": None if self.uses_reasoning_effort else "provider_request",
+            "requested_at_utc": datetime.now(timezone.utc).isoformat(),
+        }
+
     async def _diagnose_openai(self, prompt: str, temperature: float) -> Dict[str, Any]:
-        response = await self._openai.chat.completions.create(
-            model=self.model,
-            messages=[
+        request: Dict[str, Any] = {
+            "model": self.model,
+            "messages": [
                 {"role": "system", "content": SYSTEM_MESSAGE},
                 {"role": "user", "content": prompt},
             ],
-            temperature=temperature,
-            response_format={"type": "json_object"},
-        )
+            "max_completion_tokens": self.max_tokens,
+            "response_format": DIAGNOSIS_RESPONSE_FORMAT,
+        }
+        if self.uses_reasoning_effort:
+            request["reasoning_effort"] = self.reasoning_effort
+        else:
+            request["temperature"] = temperature
+
+        response = await self._openai.chat.completions.create(**request)
         usage = response.usage
         pt = usage.prompt_tokens if usage else 0
         ct = usage.completion_tokens if usage else 0
-        self.last_usage = {
-            "prompt_tokens": pt,
-            "completion_tokens": ct,
-            "total_tokens": pt + ct,
-            "estimated_cost_usd": self._compute_cost(pt, ct),
-        }
-        return json.loads(response.choices[0].message.content)
+        self._set_usage(response, pt, ct, local=False)
+        self.last_raw_response = response.choices[0].message.content
+        return self._parse_diagnosis(self.last_raw_response)
 
     async def _diagnose_anthropic(self, prompt: str, temperature: float) -> Dict[str, Any]:
         response = await self._anthropic.messages.create(
@@ -207,43 +264,36 @@ class LLMDiagnoser:
         usage = response.usage
         pt = usage.input_tokens if usage else 0
         ct = usage.output_tokens if usage else 0
-        self.last_usage = {
-            "prompt_tokens": pt,
-            "completion_tokens": ct,
-            "total_tokens": pt + ct,
-            "estimated_cost_usd": self._compute_cost(pt, ct),
-        }
+        self._set_usage(response, pt, ct, local=False)
         content = response.content[0].text
-        json_match = re.search(r'\{.*\}', content, re.DOTALL)
-        if json_match:
-            return json.loads(json_match.group())
-        return json.loads(content)
+        self.last_raw_response = content
+        return self._parse_diagnosis(content)
 
     async def _diagnose_local(self, prompt: str, temperature: float) -> Dict[str, Any]:
         """Diagnose via Ollama (or any OpenAI-compatible local server).
 
-        Most local models do not support ``response_format: json_object``,
-        so we extract JSON from the raw text response instead.
+        The thesis open-weight condition uses the same strict JSON schema and
+        reasoning level as the proprietary condition.
         """
-        response = await self._local.chat.completions.create(
-            model=self.model,
-            messages=[
+        request: Dict[str, Any] = {
+            "model": self.model,
+            "messages": [
                 {"role": "system", "content": SYSTEM_MESSAGE},
                 {"role": "user", "content": prompt},
             ],
-            temperature=temperature,
-        )
+            "max_tokens": self.max_tokens,
+            "response_format": DIAGNOSIS_RESPONSE_FORMAT,
+        }
+        if self.uses_reasoning_effort:
+            request["reasoning_effort"] = self.reasoning_effort
+        else:
+            request["temperature"] = temperature
+
+        response = await self._local.chat.completions.create(**request)
         usage = response.usage
         pt = usage.prompt_tokens if usage else 0
         ct = usage.completion_tokens if usage else 0
-        self.last_usage = {
-            "prompt_tokens": pt,
-            "completion_tokens": ct,
-            "total_tokens": pt + ct,
-            "estimated_cost_usd": 0.0,  # Local models have no API cost
-        }
+        self._set_usage(response, pt, ct, local=True)
         content = response.choices[0].message.content
-        json_match = re.search(r'\{.*\}', content, re.DOTALL)
-        if json_match:
-            return json.loads(json_match.group())
-        return json.loads(content)
+        self.last_raw_response = content
+        return self._parse_diagnosis(content)

@@ -51,12 +51,12 @@ def test_permutation():
 
 def test_cost_accuracy_chart():
     metrics = {
-        "openai/gpt-4o-mini": {
+        "openai/gpt-5.6-terra": {
             "accuracy": 0.85,
             "cost_per_diagnosis_usd": 0.002,
             "avg_execution_time_ms": 1500,
         },
-        "local/llama3": {
+        "local/gpt-oss:20b": {
             "accuracy": 0.72,
             "cost_per_diagnosis_usd": 0.0,
             "avg_execution_time_ms": 4000,

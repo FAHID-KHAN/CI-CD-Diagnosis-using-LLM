@@ -6,12 +6,12 @@ Uses LLMDiagnoser directly (no HTTP/API overhead) to benchmark each model
 on the same set of triaged logs.
 
 Usage:
-    # Compare GPT-4o-mini vs local Llama3 and Mistral (via Ollama)
+    # Compare the thesis proprietary and open-weight conditions
     python automated_scripts/benchmark_models.py
 
     # Custom model list
     python automated_scripts/benchmark_models.py \
-        --models openai/gpt-4o-mini local/llama3 local/mistral anthropic/claude-3-haiku-20240307
+        --models openai/gpt-5.6-terra local/gpt-oss:20b
 
     # Limit to 10 logs for a quick test
     python automated_scripts/benchmark_models.py --limit 10
@@ -27,13 +27,17 @@ Output:
 """
 
 import asyncio
+import hashlib
 import json
 import os
 import sys
 import argparse
+import importlib.metadata
+import platform
+import subprocess
 import time
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, parent_dir)
@@ -41,8 +45,9 @@ sys.path.insert(0, parent_dir)
 from dotenv import load_dotenv
 load_dotenv(os.path.join(parent_dir, ".env"))
 
-from src.api.llm_service import LLMDiagnoser
-from src.api.models import LLMProvider
+from src.api.llm_service import DIAGNOSIS_PROMPT, DIAGNOSIS_RESPONSE_FORMAT, LLMDiagnoser
+from src.api.grounding import GroundingVerifier
+from src.api.models import LLMProvider, LogLine
 from src.api.filtering import LogFilter
 from src.evaluation.evaluation import (
     PredictionResult,
@@ -55,9 +60,8 @@ from automated_scripts.pipeline_manifest import record_step
 # ── Default model configurations ──────────────────────────────────────────
 
 DEFAULT_MODELS = [
-    "openai/gpt-4o-mini",
-    "local/llama3",
-    "local/mistral",
+    "openai/gpt-5.6-terra",
+    "local/gpt-oss:20b",
 ]
 
 
@@ -65,14 +69,25 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Benchmark multiple LLMs on CI/CD log diagnosis")
     parser.add_argument(
         "--models", nargs="+", default=DEFAULT_MODELS,
-        help="Models to benchmark in 'provider/model' format (e.g. openai/gpt-4o-mini local/llama3)",
+        help="Models to benchmark in 'provider/model' format (e.g. openai/gpt-5.6-terra local/gpt-oss:20b)",
     )
     parser.add_argument(
         "--input", default=None,
         help="Input JSON file (default: batch1_triaged.json or batch1.json)",
     )
     parser.add_argument("--limit", type=int, default=None, help="Max logs to process")
-    parser.add_argument("--temperature", type=float, default=0.1)
+    parser.add_argument(
+        "--pilot", action="store_true",
+        help="Run a five-log pilot (equivalent to --limit 5)",
+    )
+    parser.add_argument(
+        "--temperature", type=float, default=0.0,
+        help="Sampling temperature for legacy models; thesis reasoning models ignore it",
+    )
+    parser.add_argument(
+        "--reasoning-effort", choices=["low", "medium", "high"], default="medium",
+        help="Common reasoning level for both thesis models",
+    )
     parser.add_argument(
         "--ground-truth", default=None,
         help="Ground truth JSON for accuracy computation",
@@ -114,7 +129,7 @@ def parse_model_spec(spec: str):
     return provider, model_name
 
 
-def build_diagnoser(provider: LLMProvider, model: str) -> LLMDiagnoser:
+def build_diagnoser(provider: LLMProvider, model: str, reasoning_effort: str) -> LLMDiagnoser:
     """Build an LLMDiagnoser with the right API key."""
     if provider == LLMProvider.OPENAI:
         api_key = os.getenv("OPENAI_API_KEY")
@@ -122,7 +137,12 @@ def build_diagnoser(provider: LLMProvider, model: str) -> LLMDiagnoser:
         api_key = os.getenv("ANTHROPIC_API_KEY")
     else:
         api_key = None
-    return LLMDiagnoser(provider=provider, model=model, api_key=api_key)
+    return LLMDiagnoser(
+        provider=provider,
+        model=model,
+        api_key=api_key,
+        reasoning_effort=reasoning_effort,
+    )
 
 
 async def diagnose_one(diagnoser, filtered_log, log_entry, temperature):
@@ -144,16 +164,89 @@ async def diagnose_one(diagnoser, filtered_log, log_entry, temperature):
         return None, elapsed_ms, str(e)
 
 
-async def benchmark_model(provider, model, logs, temperature, max_tokens):
-    """Run all logs through one model. Returns list of result dicts."""
-    diagnoser = build_diagnoser(provider, model)
+def save_checkpoint(path, results):
+    """Atomically save benchmark progress after every attempted log."""
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w") as f:
+        json.dump(results, f, indent=2)
+    os.replace(tmp_path, path)
+
+
+def _run_metadata_command(command):
+    """Return reproducibility metadata without failing the benchmark."""
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        output = (completed.stdout or completed.stderr).strip()
+        return {"returncode": completed.returncode, "output": output}
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"returncode": None, "output": str(exc)}
+
+
+def _sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def collect_runtime_metadata(model_specs):
+    """Capture enough environment detail to reproduce a thesis run."""
+    metadata = {
+        "run_started_at_utc": datetime.now(timezone.utc).isoformat(),
+        "platform": platform.platform(),
+        "machine": platform.machine(),
+        "python_version": platform.python_version(),
+        "openai_sdk_version": importlib.metadata.version("openai"),
+        "models_requested": model_specs,
+        "git_commit": _run_metadata_command(["git", "rev-parse", "HEAD"]),
+        "prompt_sha256": hashlib.sha256(DIAGNOSIS_PROMPT.encode()).hexdigest(),
+        "response_schema": DIAGNOSIS_RESPONSE_FORMAT,
+    }
+    local_models = [
+        parse_model_spec(spec)[1]
+        for spec in model_specs
+        if spec.lower().startswith("local/")
+    ]
+    if local_models:
+        metadata["ollama_version"] = _run_metadata_command(["ollama", "--version"])
+        metadata["ollama_list"] = _run_metadata_command(["ollama", "list"])
+        metadata["ollama_models"] = {
+            model: _run_metadata_command(["ollama", "show", model, "--verbose"])
+            for model in local_models
+        }
+    return metadata
+
+
+async def benchmark_model(
+    provider, model, logs, temperature, max_tokens, reasoning_effort, checkpoint_file,
+):
+    """Run all logs through one model with checkpoint/resume support."""
+    diagnoser = build_diagnoser(provider, model, reasoning_effort)
     label = f"{provider.value}/{model}"
     results = []
+    if os.path.exists(checkpoint_file):
+        try:
+            with open(checkpoint_file) as f:
+                results = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            results = []
+    completed_ids = {r.get("log_id") for r in results}
 
     for i, log_entry in enumerate(logs, 1):
         log_id = log_entry["log_id"]
         repo = log_entry.get("repository", "")
         workflow = log_entry.get("workflow_name", "")
+
+        if log_id in completed_ids:
+            print(f"  [{i}/{len(logs)}] {repo} - {workflow} SKIP (checkpoint)")
+            continue
 
         # Filter the log content
         filtered = LogFilter.apply_smart_filtering(
@@ -171,7 +264,12 @@ async def benchmark_model(provider, model, logs, temperature, max_tokens):
 
         if diagnosis:
             usage = diagnoser.last_usage
+            evidence = [LogLine(**ev) for ev in diagnosis.get("grounded_evidence", [])]
+            hallucination_detected, grounding_score = GroundingVerifier.verify_evidence(
+                filtered, evidence,
+            )
             results.append({
+                "status": "success",
                 "log_id": log_id,
                 "repository": repo,
                 "workflow": workflow,
@@ -180,18 +278,34 @@ async def benchmark_model(provider, model, logs, temperature, max_tokens):
                 "root_cause": diagnosis.get("root_cause", ""),
                 "suggested_fix": diagnosis.get("suggested_fix", ""),
                 "confidence_score": diagnosis.get("confidence_score", 0),
+                "failure_lines": diagnosis.get("failure_lines", []),
+                "grounded_evidence": [ev.model_dump(mode="json") for ev in evidence],
                 "reasoning": diagnosis.get("reasoning", ""),
                 "execution_time_ms": elapsed_ms,
-                "hallucination_detected": False,  # grounding done separately
+                "grounding_score": grounding_score,
+                "hallucination_detected": hallucination_detected,
                 "prompt_tokens": usage.get("prompt_tokens", 0),
                 "completion_tokens": usage.get("completion_tokens", 0),
                 "total_tokens": usage.get("total_tokens", 0),
                 "cost_usd": usage.get("estimated_cost_usd", 0.0),
+                "request_metadata": usage,
+                "raw_response": diagnoser.last_raw_response,
             })
             conf = diagnosis.get("confidence_score", 0)
             print(f"OK  {diagnosis.get('error_type','?')} ({conf:.0%}) [{elapsed_ms:.0f}ms]")
         else:
             print(f"FAIL  {error[:50] if error else '?'}")
+            results.append({
+                "status": "error",
+                "log_id": log_id,
+                "repository": repo,
+                "workflow": workflow,
+                "model": label,
+                "execution_time_ms": elapsed_ms,
+                "error": error or "Unknown diagnosis error",
+            })
+
+        save_checkpoint(checkpoint_file, results)
 
         # Small delay to avoid rate limits
         await asyncio.sleep(0.3)
@@ -201,24 +315,46 @@ async def benchmark_model(provider, model, logs, temperature, max_tokens):
 
 def compute_model_metrics(results, ground_truth=None):
     """Compute summary metrics for one model's results."""
-    n = len(results)
-    if n == 0:
-        return {}
+    attempted = len(results)
+    successful = [r for r in results if r.get("status", "success") == "success"]
+    n = len(successful)
+    if attempted == 0:
+        return {
+            "total_logs": 0,
+            "successful_logs": 0,
+            "failed_logs": 0,
+            "avg_confidence": 0.0,
+            "avg_execution_time_ms": 0.0,
+            "mean_grounding_score": 0.0,
+            "hallucination_rate": 0.0,
+            "total_tokens": 0,
+            "total_cost_usd": 0.0,
+            "cost_per_diagnosis_usd": 0.0,
+            "error_type_distribution": {},
+        }
 
-    avg_confidence = sum(r["confidence_score"] for r in results) / n
-    avg_time = sum(r["execution_time_ms"] for r in results) / n
-    error_dist = dict(Counter(r["error_type"] for r in results))
+    avg_confidence = sum(r["confidence_score"] for r in successful) / n if n else 0.0
+    avg_time = sum(r["execution_time_ms"] for r in successful) / n if n else 0.0
+    error_dist = dict(Counter(r["error_type"] for r in successful))
 
     metrics = {
-        "total_logs": n,
+        "total_logs": attempted,
+        "successful_logs": n,
+        "failed_logs": attempted - n,
         "avg_confidence": round(avg_confidence, 3),
         "avg_execution_time_ms": round(avg_time, 1),
         "error_type_distribution": error_dist,
-        "total_tokens": sum(r.get("total_tokens", 0) for r in results),
-        "total_cost_usd": round(sum(r.get("cost_usd", 0) for r in results), 6),
+        "mean_grounding_score": round(
+            sum(r.get("grounding_score", 0) for r in successful) / n, 3
+        ) if n else 0.0,
+        "hallucination_rate": round(
+            sum(bool(r.get("hallucination_detected")) for r in successful) / n, 3
+        ) if n else 0.0,
+        "total_tokens": sum(r.get("total_tokens", 0) for r in successful),
+        "total_cost_usd": round(sum(r.get("cost_usd", 0) for r in successful), 6),
         "cost_per_diagnosis_usd": round(
-            sum(r.get("cost_usd", 0) for r in results) / n, 6
-        ),
+            sum(r.get("cost_usd", 0) for r in successful) / n, 6
+        ) if n else 0.0,
     }
 
     # If ground truth is available, compute accuracy
@@ -227,7 +363,7 @@ def compute_model_metrics(results, ground_truth=None):
         type_correct = 0
         root_correct = 0
         matched = 0
-        for r in results:
+        for r in successful:
             gt = gt_map.get(r["log_id"])
             if gt:
                 matched += 1
@@ -250,7 +386,7 @@ def print_comparison_table(all_metrics):
     print("  BENCHMARK COMPARISON")
     print("=" * 80)
 
-    header = f"  {'Model':<35} {'Logs':>5} {'Accuracy':>9} {'Confidence':>11} {'Avg Time':>10} {'Cost':>10}"
+    header = f"  {'Model':<35} {'OK/All':>8} {'Accuracy':>9} {'Grounding':>10} {'Avg Time':>10} {'Cost':>10}"
     print(header)
     print("  " + "-" * 86)
 
@@ -258,10 +394,16 @@ def print_comparison_table(all_metrics):
         acc = m.get("error_type_accuracy")
         acc_str = f"{acc:.1%}" if acc is not None else "N/A"
         cost = m.get("total_cost_usd", 0)
-        cost_str = f"${cost:.4f}" if cost else "$0 (local)"
+        if cost:
+            cost_str = f"${cost:.4f}"
+        elif model_label.startswith("local/"):
+            cost_str = "$0 API"
+        else:
+            cost_str = "$0.0000"
+        completion = f"{m.get('successful_logs', 0)}/{m.get('total_logs', 0)}"
         print(
-            f"  {model_label:<35} {m['total_logs']:>5} {acc_str:>9} "
-            f"{m['avg_confidence']:>10.1%} {m['avg_execution_time_ms']:>8.0f}ms"
+            f"  {model_label:<35} {completion:>8} {acc_str:>9} "
+            f"{m.get('mean_grounding_score', 0):>9.1%} {m['avg_execution_time_ms']:>8.0f}ms"
             f" {cost_str:>10}"
         )
 
@@ -279,13 +421,15 @@ async def main():
     print("=" * 70)
     print(f"  Input : {input_file}")
     print(f"  Models: {', '.join(args.models)}")
-    print(f"  Temperature: {args.temperature}")
+    print(f"  Reasoning effort: {args.reasoning_effort}")
+    print(f"  Legacy temperature: {args.temperature}")
     print()
 
     with open(input_file) as f:
         logs = json.load(f)
-    if args.limit:
-        logs = logs[: args.limit]
+    effective_limit = 5 if args.pilot else args.limit
+    if effective_limit:
+        logs = logs[: effective_limit]
     print(f"  Logs to benchmark: {len(logs)}")
     print()
 
@@ -306,6 +450,19 @@ async def main():
         out_dir = os.path.join(parent_dir, "results", "benchmark", timestamp)
     os.makedirs(out_dir, exist_ok=True)
 
+    runtime_metadata = collect_runtime_metadata(args.models)
+    runtime_metadata["input_file"] = os.path.abspath(input_file)
+    runtime_metadata["input_sha256"] = _sha256_file(input_file)
+    runtime_metadata["log_filter"] = {
+        "max_lines": 500,
+        "window_size": 20,
+        "max_tokens": args.max_tokens,
+    }
+    runtime_metadata["reasoning_effort"] = args.reasoning_effort
+    runtime_metadata["legacy_temperature"] = args.temperature
+    with open(os.path.join(out_dir, "run_metadata.json"), "w") as f:
+        json.dump(runtime_metadata, f, indent=2)
+
     # ── Run each model ────────────────────────────────────────────────
     all_results = {}
     all_metrics = {}
@@ -313,6 +470,8 @@ async def main():
     for model_spec in args.models:
         provider, model_name = parse_model_spec(model_spec)
         label = f"{provider.value}/{model_name}"
+        safe_name = model_spec.replace("/", "_").replace(":", "_")
+        model_file = os.path.join(out_dir, f"results_{safe_name}.json")
 
         print("-" * 70)
         print(f"  Benchmarking: {label}")
@@ -320,7 +479,13 @@ async def main():
 
         try:
             results = await benchmark_model(
-                provider, model_name, logs, args.temperature, args.max_tokens,
+                provider,
+                model_name,
+                logs,
+                args.temperature,
+                args.max_tokens,
+                args.reasoning_effort,
+                model_file,
             )
         except Exception as e:
             print(f"  ERROR: Model {label} failed entirely: {e}")
@@ -329,16 +494,17 @@ async def main():
         all_results[label] = results
 
         # Save per-model results
-        safe_name = model_spec.replace("/", "_")
-        model_file = os.path.join(out_dir, f"results_{safe_name}.json")
-        with open(model_file, "w") as f:
-            json.dump(results, f, indent=2)
+        save_checkpoint(model_file, results)
 
         # Compute metrics
         metrics = compute_model_metrics(results, ground_truth)
         all_metrics[label] = metrics
 
-        print(f"\n  {label}: {len(results)} diagnosed, avg confidence {metrics.get('avg_confidence', 0):.1%}, avg time {metrics.get('avg_execution_time_ms', 0):.0f}ms")
+        print(
+            f"\n  {label}: {metrics.get('successful_logs', 0)}/{metrics.get('total_logs', 0)} "
+            f"diagnosed, avg confidence {metrics.get('avg_confidence', 0):.1%}, "
+            f"avg time {metrics.get('avg_execution_time_ms', 0):.0f}ms"
+        )
         print()
 
     # ── Comparison report ─────────────────────────────────────────────
@@ -347,6 +513,9 @@ async def main():
         "input_file": input_file,
         "total_logs": len(logs),
         "temperature": args.temperature,
+        "reasoning_effort": args.reasoning_effort,
+        "pilot": args.pilot,
+        "runtime_metadata_file": "run_metadata.json",
         "models": all_metrics,
     }
     report_file = os.path.join(out_dir, "comparison_report.json")
@@ -363,13 +532,16 @@ async def main():
         def _to_preds(results_list):
             preds = []
             for r in results_list:
+                if r.get("status", "success") != "success":
+                    continue
                 gt = gt_map.get(r["log_id"])
                 if gt:
                     preds.append(PredictionResult(
                         log_id=r["log_id"],
                         predicted_error_type=r["error_type"],
                         actual_error_type=gt["actual_error_type"],
-                        predicted_lines=[], actual_lines=[],
+                        predicted_lines=r.get("failure_lines", []),
+                        actual_lines=gt.get("failure_lines", gt.get("actual_lines", [])),
                         confidence=r["confidence_score"],
                         hallucination_detected=r.get("hallucination_detected", False),
                         execution_time_ms=r["execution_time_ms"],
@@ -444,7 +616,12 @@ async def main():
     # Record in pipeline manifest
     record_step(
         step="benchmark",
-        config={"models": args.models, "temperature": args.temperature},
+        config={
+            "models": args.models,
+            "temperature": args.temperature,
+            "reasoning_effort": args.reasoning_effort,
+            "pilot": args.pilot,
+        },
         inputs={"logs": len(logs), "file": input_file},
         outputs={
             "models_benchmarked": len(all_metrics),

@@ -20,8 +20,8 @@
 #    ./run_workflow.sh --skip-annotate # Skip interactive annotation
 #    ./run_workflow.sh --from 4        # Resume from step 4 (start API + diagnose + ...)
 #    ./run_workflow.sh --only 8        # Run only step 8 (benchmark)
-#    ./run_workflow.sh --provider local --model llama3  # Use local Ollama model
-#    ./run_workflow.sh --benchmark-models "openai/gpt-4o-mini local/llama3 local/mistral"
+#    ./run_workflow.sh --provider local --model gpt-oss:20b  # Use local open-weight model
+#    ./run_workflow.sh --benchmark-models "openai/gpt-5.6-terra local/gpt-oss:20b"
 #    ./run_workflow.sh --help          # Show this help
 #
 # ==========================================================================
@@ -72,8 +72,9 @@ SKIP_ANNOTATE=false
 SKIP_BENCHMARK=false
 FROM_STEP=1
 ONLY_STEP=0
-MODEL="gpt-4o-mini"
+MODEL="gpt-5.6-terra"
 PROVIDER="openai"
+REASONING_EFFORT="medium"
 LIMIT=""
 BENCHMARK_MODELS=""
 
@@ -92,6 +93,7 @@ while [[ $# -gt 0 ]]; do
         --only)          ONLY_STEP="$2"; shift 2 ;;
         --model)         MODEL="$2"; shift 2 ;;
         --provider)      PROVIDER="$2"; shift 2 ;;
+        --reasoning-effort) REASONING_EFFORT="$2"; shift 2 ;;
         --limit)         LIMIT="$2"; shift 2 ;;
         --benchmark-models) BENCHMARK_MODELS="$2"; shift 2 ;;
         --port)          API_PORT="$2"; API_URL="http://localhost:${API_PORT}"; shift 2 ;;
@@ -118,7 +120,7 @@ echo "| |     | || (__|  _/  | |) | / _\` / _\` | ' \\/ _ (_-</ _| (_-<"
 echo "|_|     |_| \\___|_|    |___/|_\\__,_\\__, |_||_\\___/__/\\__|_/__/"
 echo "                                   |___/"
 echo -e "${NC}"
-echo -e "  Model: ${PROVIDER}/${MODEL}   Port: ${API_PORT}"
+echo -e "  Model: ${PROVIDER}/${MODEL}   Reasoning: ${REASONING_EFFORT}   Port: ${API_PORT}"
 echo ""
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -290,6 +292,7 @@ if should_run 5; then
     DIAGNOSE_ARGS=(
         --model "${MODEL}"
         --provider "${PROVIDER}"
+        --reasoning-effort "${REASONING_EFFORT}"
         --api-url "${API_URL}"
         --yes
     )
@@ -382,6 +385,8 @@ if should_run 8; then
         if [[ -n "${LIMIT}" ]]; then
             BENCHMARK_ARGS+=(--limit "${LIMIT}")
         fi
+
+        BENCHMARK_ARGS+=(--reasoning-effort "${REASONING_EFFORT}")
 
         GT_FILE="${PROJECT_DIR}/data/evaluation/ground_truth.json"
         if [[ -f "${GT_FILE}" ]]; then

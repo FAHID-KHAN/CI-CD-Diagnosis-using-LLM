@@ -17,7 +17,7 @@ def test_diagnose_endpoint():
         json={
             "log_content": test_log,
             "provider": "openai",
-            "model": "gpt-4o-mini",
+            "model": "gpt-5.6-terra",
             "temperature": 0.1
         }
     )

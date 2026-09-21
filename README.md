@@ -6,7 +6,8 @@ Master's thesis project -- Tampere University.
 
 ## Features
 
-- **Multi-LLM support** -- OpenAI (GPT-4o-mini), Anthropic (Claude), and local models via Ollama (Llama3, Mistral, Mixtral)
+- **Controlled thesis comparison** -- OpenAI GPT-5.6 Terra (proprietary) versus gpt-oss-20b (open-weights, local via Ollama)
+- **Additional provider support** -- Anthropic and other OpenAI-compatible local models remain available outside the main experiment
 - **Smart log filtering** -- keyword-based filtering with tiktoken token counting and intelligent middle-out truncation (configurable token budget, default 12 000)
 - **Grounding verification** -- hallucination detection with exact + fuzzy matching (SequenceMatcher, threshold 0.75)
 - **Checkpoint/resume** -- diagnosis pipeline resumes from where it left off on interruption
@@ -82,8 +83,7 @@ To use local LLMs instead of cloud APIs:
 brew install ollama
 
 # Pull models
-ollama pull llama3
-ollama pull mistral
+ollama pull gpt-oss:20b
 
 # Start Ollama server (runs on port 11434)
 ollama serve
@@ -91,7 +91,7 @@ ollama serve
 # Diagnose with a local model
 curl -X POST http://localhost:8000/diagnose \
   -H "Content-Type: application/json" \
-  -d '{"log_content": "...", "provider": "local", "model": "llama3"}'
+  -d '{"log_content": "...", "provider": "local", "model": "gpt-oss:20b", "reasoning_effort": "medium"}'
 ```
 
 ## Workflow
@@ -115,7 +115,7 @@ Or use the all-in-one bash script:
 ./run_workflow.sh --skip-collect --from 4      # Re-diagnose existing logs
 ./run_workflow.sh --skip-annotate              # Non-interactive (reuse ground truth)
 ./run_workflow.sh --only 8                     # Just run benchmark
-./run_workflow.sh --provider local --model llama3  # Use local Ollama model
+./run_workflow.sh --provider local --model gpt-oss:20b  # Use the thesis open-weight model
 ```
 
 Run `make help` to see all available commands.
@@ -125,15 +125,16 @@ Run `make help` to see all available commands.
 Compare different LLMs on the same set of logs:
 
 ```bash
-# Default models (gpt-4o-mini, llama3, mistral)
+# Default thesis models (proprietary versus open-weights)
 python automated_scripts/benchmark_models.py
 
 # Custom model list
 python automated_scripts/benchmark_models.py \
-    --models openai/gpt-4o-mini local/llama3 local/mistral anthropic/claude-3-haiku-20240307
+    --models openai/gpt-5.6-terra local/gpt-oss:20b \
+    --reasoning-effort medium
 
-# Quick test with 10 logs
-python automated_scripts/benchmark_models.py --limit 10
+# Required five-log pilot before the final run
+python automated_scripts/benchmark_models.py --pilot
 
 # With ground truth for accuracy scoring
 python automated_scripts/benchmark_models.py --ground-truth data/evaluation/ground_truth.json
@@ -163,7 +164,9 @@ response = requests.post(
     json={
         "log_content": "<paste log here>",
         "provider": "openai",           # or "anthropic", "local"
-        "model": "gpt-4o-mini",         # or "llama3", "mistral", "claude-..."
+        "model": "gpt-5.6-terra",
+        "reasoning_effort": "medium",
+        "temperature": 0.0,              # ignored by thesis reasoning models
         "use_filtering": True,
         "repository": "owner/repo",          # optional context
         "workflow_name": "CI Tests",          # optional context

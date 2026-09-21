@@ -16,8 +16,12 @@ def parse_args():
                         help="Input JSON file (default: batch1_triaged.json if exists, else batch1.json)")
     parser.add_argument("--output", default=None,
                         help="Output JSON file (default: data/annotated_logs/diagnosed_batch1.json)")
-    parser.add_argument("--model", default="gpt-4o-mini", help="LLM model to use")
-    parser.add_argument("--provider", default="openai", help="LLM provider (openai or anthropic)")
+    parser.add_argument("--model", default="gpt-5.6-terra", help="LLM model to use")
+    parser.add_argument("--provider", default="openai", help="LLM provider (openai, anthropic, or local)")
+    parser.add_argument(
+        "--reasoning-effort", choices=["low", "medium", "high"], default="medium",
+        help="Reasoning level for the thesis models",
+    )
     parser.add_argument("--limit", type=int, default=None, help="Max number of logs to diagnose")
     parser.add_argument("--api-url", default="http://localhost:8000", help="API base URL")
     parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
@@ -53,6 +57,7 @@ if args.limit:
 
 print(f"  Loaded {len(logs)} logs")
 print(f"  Model: {args.provider}/{args.model}")
+print(f"  Reasoning effort: {args.reasoning_effort}")
 print(f"  Estimated cost: ${len(logs) * 0.002:.2f} - ${len(logs) * 0.005:.2f}")
 print()
 
@@ -125,7 +130,8 @@ for i, log in enumerate(logs, 1):
                 'log_content': log['log_content'],
                 'provider': args.provider,
                 'model': args.model,
-                'temperature': 0.1,
+                'temperature': 0.0,
+                'reasoning_effort': args.reasoning_effort,
                 'use_filtering': True,
                 'repository': log.get('repository', ''),
                 'workflow_name': log.get('workflow_name', ''),
@@ -202,7 +208,11 @@ print("="*70)
 # Record in pipeline manifest
 record_step(
     step="diagnose",
-    config={"model": f"{args.provider}/{args.model}", "api_url": args.api_url},
+    config={
+        "model": f"{args.provider}/{args.model}",
+        "reasoning_effort": args.reasoning_effort,
+        "api_url": args.api_url,
+    },
     inputs={"triaged_logs": len(logs), "file": log_file},
     outputs={"diagnosed": len(results), "failed": len(errors), "file": output_file},
     notes=f"{len(results)}/{len(logs)} diagnosed, {len(errors)} failed",

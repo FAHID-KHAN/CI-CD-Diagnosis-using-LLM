@@ -26,8 +26,9 @@ class APISettings:
     port: int = 8000
     debug: bool = False
     default_provider: str = "openai"
-    default_model: str = "gpt-4"
-    temperature: float = 0.1
+    default_model: str = "gpt-5.6-terra"
+    temperature: float = 0.0
+    reasoning_effort: str = "medium"
     max_tokens: int = 4096
     filtering_enabled: bool = True
     filtering_max_context_lines: int = 500
@@ -96,6 +97,7 @@ def load_settings() -> Settings:
     s.api.default_provider = llm_section.get("default_provider", s.api.default_provider)
     s.api.default_model = llm_section.get("default_model", s.api.default_model)
     s.api.temperature = llm_section.get("temperature", s.api.temperature)
+    s.api.reasoning_effort = llm_section.get("reasoning_effort", s.api.reasoning_effort)
     s.api.max_tokens = llm_section.get("max_tokens", s.api.max_tokens)
     s.api.filtering_enabled = filt_section.get("enabled", s.api.filtering_enabled)
     s.api.filtering_max_context_lines = filt_section.get("max_context_lines", s.api.filtering_max_context_lines)

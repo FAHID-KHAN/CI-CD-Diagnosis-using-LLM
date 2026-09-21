@@ -82,6 +82,7 @@ async def diagnose_log(request: DiagnosisRequest):
             model=request.model,
             api_key=api_key,
             max_tokens=settings.api.max_tokens,
+            reasoning_effort=request.reasoning_effort,
         )
 
         diagnosis = await diagnoser.diagnose(
@@ -145,6 +146,8 @@ async def upload_log_file(file: UploadFile = File(...)):
             log_content=log_content,
             provider=LLMProvider(settings.api.default_provider),
             model=settings.api.default_model,
+            temperature=settings.api.temperature,
+            reasoning_effort=settings.api.reasoning_effort,
         )
         return await diagnose_log(request)
 

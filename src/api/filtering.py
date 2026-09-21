@@ -7,7 +7,9 @@ logger = logging.getLogger(__name__)
 
 try:
     import tiktoken
-    _encoder = tiktoken.encoding_for_model("gpt-4o-mini")
+    # Both thesis models use an o200k-derived tokenizer family. Pinning the
+    # encoding avoids token-count drift when a moving model alias changes.
+    _encoder = tiktoken.get_encoding("o200k_base")
 except Exception:
     _encoder = None
 

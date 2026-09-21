@@ -29,8 +29,9 @@ def test_diagnosis():
             json={
                 "log_content": log_content,
                 "provider": "openai",
-                "model": "gpt-4o-mini",
-                "temperature": 0.1,
+                "model": "gpt-5.6-terra",
+                "temperature": 0.0,
+                "reasoning_effort": "medium",
                 "use_filtering": True,
                 "max_context_lines": 500,
             },
@@ -90,7 +91,13 @@ def test_multiple_scenarios():
         try:
             resp = requests.post(
                 "http://localhost:8000/diagnose",
-                json={"log_content": tc["log"], "provider": "openai", "model": "gpt-4o-mini", "temperature": 0.1},
+                json={
+                    "log_content": tc["log"],
+                    "provider": "openai",
+                    "model": "gpt-5.6-terra",
+                    "temperature": 0.0,
+                    "reasoning_effort": "medium",
+                },
                 timeout=30,
             )
             if resp.status_code == 200:

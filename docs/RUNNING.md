@@ -34,7 +34,7 @@ Alternatively, run the full pipeline with a single script:
 ./run_workflow.sh --skip-collect --from 3  # Skip collection, resume from triage
 ./run_workflow.sh --skip-annotate          # Non-interactive (reuse ground truth)
 ./run_workflow.sh --only 7                 # Just regenerate evaluation
-./run_workflow.sh --model gpt-4 --limit 10 # Custom model, limit logs
+./run_workflow.sh --model gpt-5.6-terra --reasoning-effort medium --limit 10
 ```
 
 ### 1. Collect logs
