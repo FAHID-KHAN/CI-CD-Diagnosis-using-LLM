@@ -170,15 +170,20 @@ crash.
 ```text
 configs/thesis_fresh_2026.yaml       Fixed study protocol
 run_workflow.sh                      Single entry point for every stage
-automated_scripts/
+clean.sh                             Remove caches; --studies clears collected data
+automated_scripts/                   The pipeline. Removing any of it breaks the tool
   preflight_study.py                 Environment and one-log check
   data_collection.py                 Immutable GitHub collection
   triage.py                          Eligibility and exclusion audit
+  create_smoke_cohort.py             Reproducible five-case engineering cohort
   annotate_blind.py                  Model-independent ground truth
   benchmark_models.py                Paired pilot and final experiment
   compare_reports.py                 Terminal and visual report comparison
   study_status.py                    Stage-by-stage state from the files on disk
   study_utils.py                     Checksums and atomic storage
+tools/                               Standalone utilities; the pipeline never calls these
+  scout_repositories.py              Measure candidates before choosing a pair
+  carry_over_annotations.py          Reuse annotations when log content is identical
 src/
   data_collection/                   GitHub Actions client
   api/                               Filtering, model and grounding core
@@ -195,6 +200,14 @@ docs/
   architecture/                      How the system works and how to run it
   thesis/                            Plan, action items and supervision record
   archive/                           Superseded, kept as history only
+```
+
+## Housekeeping
+
+```bash
+./clean.sh              # caches and build artefacts
+./clean.sh --dry-run    # show what would go
+./clean.sh --studies    # also clear collected data, after confirming
 ```
 
 ## Tests
