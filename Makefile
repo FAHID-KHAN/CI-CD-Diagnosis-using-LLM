@@ -102,17 +102,17 @@ compare-pilot:
 		--experiment $(SMOKE_ROOT)/experiments/pilot_002 \
 		--json $(SMOKE_ROOT)/experiments/pilot_002/comparison_data.json
 
-# The diagram is generated from docs/make_architecture.py, so it can be
+# The diagram is generated from docs/architecture/make_architecture.py, so it can be
 # corrected and diffed rather than being an opaque committed image.
 CHROME ?= /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
 
 architecture:
-	python docs/make_architecture.py
-	@height=$$(python -c "import re;print(re.search(r'<svg[^>]*height=\"(\\d+)\"', open('docs/architecture.svg').read()).group(1))"); \
+	python docs/architecture/make_architecture.py
+	@height=$$(python -c "import re;print(re.search(r'<svg[^>]*height=\"(\\d+)\"', open('docs/architecture/architecture.svg').read()).group(1))"); \
 	"$(CHROME)" --headless --disable-gpu --hide-scrollbars \
 		--force-device-scale-factor=2 --window-size=2400,$$height \
-		--screenshot=docs/architecture.png docs/architecture.svg 2>/dev/null; \
-	echo "Wrote docs/architecture.png"
+		--screenshot=docs/architecture/architecture.png docs/architecture/architecture.svg 2>/dev/null; \
+	echo "Wrote docs/architecture/architecture.png"
 
 # Same inspector run_workflow.sh uses; judged from the files on disk. A blocking
 # stage is shown with [!] rather than failing the target, because this one is for

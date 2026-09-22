@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Generate docs/architecture.svg from a single declarative layout.
+"""Generate docs/architecture/architecture.svg from a single declarative layout.
 
 The diagram was previously a committed PNG with no source, so it could not be
 corrected or diffed. This script is the source: edit the PANELS structure below
 and re-run it.
 
-    python docs/make_architecture.py
+    python docs/architecture/make_architecture.py
 
 Render the PNG for the README and slides with any headless browser, e.g.
 
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \\
       --headless --disable-gpu --window-size=2400,1560 --force-device-scale-factor=2 \\
-      --screenshot=docs/architecture.png docs/architecture.svg
+      --screenshot=docs/architecture/architecture.png docs/architecture/architecture.svg
 
 The split into panels is deliberate: panel A is the *artifact* being evaluated,
 panels B and C are the *evaluation apparatus* that produces and checks the

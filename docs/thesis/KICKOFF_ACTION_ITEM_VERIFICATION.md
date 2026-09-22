@@ -52,7 +52,7 @@ separately and never describe grounding as accuracy.
 | D4 | Separate development from final data; freeze and evaluate once | **Was violated, now blocked.** All five smoke cases are members of the 74-case cohort `make final` reads. The benchmark now refuses such a run unless `--allow-excluded-cases` is given with a written justification | `src/evaluation/case_partitions.py`, `tests/test_methodology_guards.py` |
 | D5 | Category-level results showing where the LLM is strong or weak | **Now available.** Per-category precision, recall, F1 and support, macro F1, and a confusion matrix per condition | `src/evaluation/category_metrics.py`, comparison page |
 | D6 | Ground the setup in literature before the main evaluation | Outside the tool. No evidence matrix exists in the repository | — |
-| D7 | Shortened working title | Documentation only | `docs/THESIS_EXECUTION_ROADMAP_2026-09-21.md` |
+| D7 | Shortened working title | Documentation only | `docs/thesis/THESIS_EXECUTION_ROADMAP_2026-09-21.md` |
 | D8 | Next review in about two weeks with a methodology proposal | Outside the tool | — |
 
 ## Action items

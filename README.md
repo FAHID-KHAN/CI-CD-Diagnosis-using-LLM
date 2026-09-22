@@ -7,14 +7,14 @@ ground truth, and compare one proprietary model with one open-weights model.
 **Methodology hold:** the 21 September kickoff review requires independent,
 evidence-backed ground truth, a two-repository starting scope and a genuinely
 held-out final set. Do not use the current pilot or final commands for thesis
-evidence until the [evaluation roadmap](docs/THESIS_EXECUTION_ROADMAP_2026-09-21.md)
+evidence until the [evaluation roadmap](docs/thesis/THESIS_EXECUTION_ROADMAP_2026-09-21.md)
 has reached its methodology-approval and tool-update gates.
 
-![Architecture](docs/architecture.png)
+![Architecture](docs/architecture/architecture.png)
 
 The diagram separates the **artifact** being evaluated (filter, prompt, schema,
 grounding check) from the **evaluation apparatus** that produces and checks the
-evidence. It is generated from [docs/make_architecture.py](docs/make_architecture.py);
+evidence. It is generated from [docs/architecture/make_architecture.py](docs/architecture/make_architecture.py);
 run `make architecture` after changing the system.
 
 ## Research conditions
@@ -107,9 +107,9 @@ make final
 ```
 
 The full final command and every validation gate are documented in the
-[controlled study runbook](docs/CONTROLLED_STUDY_RUNBOOK.md). The kickoff
+[controlled study runbook](docs/architecture/CONTROLLED_STUDY_RUNBOOK.md). The kickoff
 decisions and action items are checked against the code in the
-[action-item verification](docs/KICKOFF_ACTION_ITEM_VERIFICATION.md).
+[action-item verification](docs/thesis/KICKOFF_ACTION_ITEM_VERIFICATION.md).
 
 `make final` refuses to run over cases an exploratory cohort has already used,
 so the smoke cases cannot leak into the held-out evaluation.
@@ -191,7 +191,10 @@ src/
     case_partitions.py               Held-out leakage guard
     comparison_view.py               Self-contained HTML comparison page
 tests/                               Offline tests
-docs/CONTROLLED_STUDY_RUNBOOK.md     Exact operating procedure
+docs/
+  architecture/                      How the system works and how to run it
+  thesis/                            Plan, action items and supervision record
+  archive/                           Superseded, kept as history only
 ```
 
 ## Tests

@@ -7,12 +7,12 @@ the fresh, controlled final-study dataset.
 the kickoff review identified unresolved research-validity requirements. Do
 not execute the pilot or final study for thesis evidence until the ground-truth
 and held-out design in
-[the thesis evaluation roadmap](THESIS_EXECUTION_ROADMAP_2026-09-21.md) is
+[the thesis evaluation roadmap](../thesis/THESIS_EXECUTION_ROADMAP_2026-09-21.md) is
 approved and implemented.
 
 ![Controlled architecture](architecture.png)
 
-Generated from `docs/make_architecture.py` via `make architecture`. The current
+Generated from `docs/architecture/make_architecture.py` via `make architecture`. The current
 system has no rule-based or heuristic baseline; whether one is in scope is an
 open decision for the methodology review.
 
@@ -59,7 +59,7 @@ evaluation. The command refuses to overwrite an existing smoke cohort.
 ## Fixed study design
 
 The versioned protocol is
-[`configs/thesis_fresh_2026.yaml`](../configs/thesis_fresh_2026.yaml). It fixes:
+[`configs/thesis_fresh_2026.yaml`](../../configs/thesis_fresh_2026.yaml). It fixes:
 
 - six repositories across Python, JavaScript/TypeScript and JVM ecosystems;
 - no automatic repository discovery;
