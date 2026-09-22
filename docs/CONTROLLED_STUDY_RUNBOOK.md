@@ -3,6 +3,13 @@
 This is the operational guide for the single supported repository workflow:
 the fresh, controlled final-study dataset.
 
+**Methodology hold:** this runbook describes the current implementation, but
+the kickoff review identified unresolved research-validity requirements. Do
+not execute the pilot or final study for thesis evidence until the ground-truth
+and held-out design in
+[the thesis evaluation roadmap](THESIS_EXECUTION_ROADMAP_2026-09-21.md) is
+approved and implemented.
+
 ![Controlled architecture](architecture.png)
 
 ## Purpose and safety boundary

@@ -4,6 +4,12 @@ This repository contains one thesis workflow: collect a fixed set of failed
 GitHub Actions logs, triage them with documented rules, create blind human
 ground truth, and compare one proprietary model with one open-weights model.
 
+**Methodology hold:** the 21 September kickoff review requires independent,
+evidence-backed ground truth, a two-repository starting scope and a genuinely
+held-out final set. Do not use the current pilot or final commands for thesis
+evidence until the [evaluation roadmap](docs/THESIS_EXECUTION_ROADMAP_2026-09-21.md)
+has reached its methodology-approval and tool-update gates.
+
 ![Architecture](docs/architecture.png)
 
 ## Research conditions
