@@ -5,6 +5,7 @@ import yaml
 from automated_scripts.study_utils import atomic_write_json, load_study_config, sha256_text
 from automated_scripts.annotate_blind import parse_line_numbers
 from automated_scripts.benchmark_models import validate_inputs
+from automated_scripts.create_smoke_cohort import select_smoke_cases
 from automated_scripts.triage import triage_logs
 from src.api.filtering import LogFilter
 from src.api.grounding import GroundingVerifier
@@ -126,3 +127,31 @@ def test_filtered_logs_keep_human_facing_one_based_line_numbers():
 
 def test_missing_evidence_is_ungrounded():
     assert GroundingVerifier.verify_evidence("[Line 1] ERROR", []) == (True, 0.0)
+
+
+def test_smoke_selection_is_deterministic_and_repository_diverse():
+    cases = [
+        {
+            "log_id": f"{repository}-{index}",
+            "repository": repository,
+            "log_sha256": f"hash-{repository}-{index}",
+        }
+        for repository in ("a/one", "b/two", "c/three")
+        for index in range(3)
+    ]
+    original = json.loads(json.dumps(cases))
+    first = select_smoke_cases(cases, size=3, seed=42)
+    second = select_smoke_cases(cases, size=3, seed=42)
+
+    assert [item["log_id"] for item in first] == [item["log_id"] for item in second]
+    assert len({item["repository"] for item in first}) == 3
+    assert cases == original
+
+
+def test_smoke_selection_rejects_duplicate_ids():
+    cases = [
+        {"log_id": "duplicate", "repository": "a/one", "log_sha256": "one"},
+        {"log_id": "duplicate", "repository": "b/two", "log_sha256": "two"},
+    ]
+    with pytest.raises(ValueError, match="duplicate"):
+        select_smoke_cases(cases, size=1, seed=42)

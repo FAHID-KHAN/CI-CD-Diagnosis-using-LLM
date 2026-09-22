@@ -1,0 +1,5 @@
+FROM qwen3.5:9b
+
+# Fixed for reproducibility. The 24K allocation accommodates the shared
+# 12K-token filtered log, prompt/schema overhead, and completion budget.
+PARAMETER num_ctx 24576

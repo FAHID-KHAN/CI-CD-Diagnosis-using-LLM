@@ -6,6 +6,8 @@ The project now has one supported execution path: the controlled thesis study.
 - Use [architecture.png](architecture.png) for the end-to-end dataflow.
 - Run `./run_workflow.sh --help` for cohort-preparation options.
 - Run `make help` for the small set of supported commands.
+- Use `make smoke-cohort`, `make annotate-smoke ANNOTATOR=<id>`, then
+  `make pilot` for the isolated engineering-only end-to-end check.
 
 Older meeting and progress documents are historical records, not operating
 instructions.

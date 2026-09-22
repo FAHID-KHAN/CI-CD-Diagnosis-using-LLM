@@ -16,7 +16,6 @@ import platform
 import subprocess
 import sys
 import time
-from collections import Counter
 from datetime import datetime, timezone
 
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -36,11 +35,16 @@ from src.evaluation.evaluation import (
     Visualizer,
 )
 
+# Shared with compare_reports.py so the benchmark and the comparison viewer can
+# never drift apart on what a metric means.
+from src.evaluation.report_comparison import compute_model_metrics
+from src.evaluation.case_partitions import describe_overlap, find_overlap, load_exclusions
+
 # ── Default model configurations ──────────────────────────────────────────
 
 DEFAULT_MODELS = [
     "openai/gpt-5.6-terra",
-    "local/gpt-oss:20b",
+    "local/thesis-qwen3.5:9b-24k",
 ]
 REASONING_EFFORT = "medium"
 MAX_FILTER_TOKENS = 12000
@@ -56,6 +60,19 @@ def parse_args():
     )
     parser.add_argument("--ground-truth", required=True, help="Blind ground-truth JSON")
     parser.add_argument("--output-dir", required=True, help="Dedicated pilot or final output directory")
+    parser.add_argument(
+        "--studies-root",
+        default="data/studies",
+        help="Where to look for cohorts that declare cases exploratory (default: data/studies)",
+    )
+    parser.add_argument(
+        "--allow-excluded-cases",
+        metavar="JUSTIFICATION",
+        help=(
+            "Run even though the input contains cases an exploratory cohort already used. "
+            "The justification is recorded in run_metadata.json. Never use this for thesis evidence."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -302,63 +319,6 @@ async def benchmark_model(
     return results
 
 
-def compute_model_metrics(results, ground_truth=None):
-    """Compute summary metrics for one model's results."""
-    attempted = len(results)
-    successful = [r for r in results if r.get("status", "success") == "success"]
-    n = len(successful)
-    if attempted == 0:
-        return {
-            "total_logs": 0,
-            "successful_logs": 0,
-            "failed_logs": 0,
-            "avg_confidence": 0.0,
-            "avg_execution_time_ms": 0.0,
-            "mean_grounding_score": 0.0,
-            "hallucination_rate": 0.0,
-            "total_tokens": 0,
-            "total_cost_usd": 0.0,
-            "cost_per_diagnosis_usd": 0.0,
-            "error_type_distribution": {},
-        }
-
-    avg_confidence = sum(r["confidence_score"] for r in successful) / n if n else 0.0
-    avg_time = sum(r["execution_time_ms"] for r in successful) / n if n else 0.0
-    error_dist = dict(Counter(r["error_type"] for r in successful))
-
-    metrics = {
-        "total_logs": attempted,
-        "successful_logs": n,
-        "failed_logs": attempted - n,
-        "avg_confidence": round(avg_confidence, 3),
-        "avg_execution_time_ms": round(avg_time, 1),
-        "error_type_distribution": error_dist,
-        "mean_grounding_score": round(sum(r.get("grounding_score", 0) for r in successful) / n, 3) if n else 0.0,
-        "hallucination_rate": (
-            round(sum(bool(r.get("hallucination_detected")) for r in successful) / n, 3) if n else 0.0
-        ),
-        "total_tokens": sum(r.get("total_tokens", 0) for r in successful),
-        "total_cost_usd": round(sum(r.get("cost_usd", 0) for r in successful), 6),
-        "cost_per_diagnosis_usd": round(sum(r.get("cost_usd", 0) for r in successful) / n, 6) if n else 0.0,
-    }
-
-    # Inference failures count as incorrect so this measures the complete
-    # diagnostic system, not only the subset of successful model calls.
-    if ground_truth:
-        gt_map = {a["log_id"]: a for a in ground_truth}
-        matched_results = [result for result in results if result.get("log_id") in gt_map]
-        type_correct = sum(
-            result.get("status", "success") == "success"
-            and result.get("error_type") == gt_map[result["log_id"]]["actual_error_type"]
-            for result in matched_results
-        )
-        if matched_results:
-            metrics["matched_gt_logs"] = len(matched_results)
-            metrics["error_type_accuracy"] = round(type_correct / len(matched_results), 3)
-
-    return metrics
-
-
 def print_comparison_table(all_metrics):
     """Print a formatted comparison table."""
     print()
@@ -418,6 +378,17 @@ async def main():
         ground_truth = gt_data
     else:
         ground_truth = []
+    excluded, manifest_problems = load_exclusions(args.studies_root, input_file)
+    for problem in manifest_problems:
+        print(f"  WARNING: {problem}")
+    overlap = find_overlap(logs, excluded)
+    if overlap:
+        if not args.allow_excluded_cases:
+            print("ERROR: " + describe_overlap(overlap))
+            sys.exit(1)
+        print(f"  WARNING: proceeding over {len(overlap)} excluded case(s).")
+        print(f"  Justification: {args.allow_excluded_cases}")
+
     validation_error = validate_inputs(logs, ground_truth)
     if validation_error:
         print(f"ERROR: {validation_error}")
@@ -462,8 +433,19 @@ async def main():
             "max_tokens": MAX_FILTER_TOKENS,
         }
         runtime_metadata["reasoning_effort"] = REASONING_EFFORT
-        with open(metadata_path, "w") as f:
-            json.dump(runtime_metadata, f, indent=2)
+
+    # Recorded on fresh runs and on resumes alike, so the provenance of a
+    # resumed run states which cases the guard checked.
+    runtime_metadata["partition_guard"] = {
+        "studies_root": os.path.abspath(args.studies_root),
+        "excluded_cases_known": len(excluded),
+        "manifest_problems": manifest_problems,
+        "overlap": [hit.to_dict() for hit in overlap],
+        "override_justification": args.allow_excluded_cases,
+        "checked_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    with open(metadata_path, "w") as f:
+        json.dump(runtime_metadata, f, indent=2)
 
     # ── Run each model ────────────────────────────────────────────────
     all_results = {}

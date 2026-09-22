@@ -69,7 +69,9 @@ Respond in JSON format:
 class LLMDiagnoser:
     """Run either of the two fixed thesis model conditions."""
 
-    # Default Ollama endpoint (OpenAI-compatible)
+    # Default Ollama endpoint (OpenAI-compatible). The local thesis model is
+    # created from qwen3.5:9b with a fixed 24K context; see the tracked
+    # Modelfile in configs/.
     OLLAMA_BASE_URL = "http://localhost:11434/v1"
 
     def __init__(
@@ -90,12 +92,12 @@ class LLMDiagnoser:
 
         expected_models = {
             LLMProvider.OPENAI: "gpt-5.6-terra",
-            LLMProvider.LOCAL: "gpt-oss:20b",
+            LLMProvider.LOCAL: "thesis-qwen3.5:9b-24k",
         }
         if expected_models.get(provider) != model:
             raise ValueError(
                 f"Unsupported thesis condition: {provider.value}/{model}. "
-                "Use openai/gpt-5.6-terra or local/gpt-oss:20b."
+                "Use openai/gpt-5.6-terra or local/thesis-qwen3.5:9b-24k."
             )
 
         # Token usage from the most recent call

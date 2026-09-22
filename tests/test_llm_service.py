@@ -51,13 +51,13 @@ def test_terra_uses_reasoning_and_strict_schema_without_temperature():
     assert diagnoser.last_usage["resolved_model"] == "gpt-5.6-terra"
 
 
-def test_gpt_oss_uses_same_reasoning_and_schema_without_temperature():
+def test_qwen_uses_same_reasoning_and_schema_without_temperature():
     diagnoser = LLMDiagnoser(
         LLMProvider.LOCAL,
-        "gpt-oss:20b",
+        "thesis-qwen3.5:9b-24k",
         reasoning_effort="medium",
     )
-    create = AsyncMock(return_value=_response("gpt-oss:20b"))
+    create = AsyncMock(return_value=_response("thesis-qwen3.5:9b-24k"))
     diagnoser._local = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
 
     asyncio.run(diagnoser.diagnose("[Line 12] ModuleNotFoundError: requests"))

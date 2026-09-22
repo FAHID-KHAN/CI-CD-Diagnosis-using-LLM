@@ -52,13 +52,15 @@ class StatisticalTests:
             }
 
         chi2 = (abs(n01 - n10) - 1) ** 2 / (n01 + n10)
-        p_value = 1 - stats.chi2.cdf(chi2, df=1)
+        # scipy returns NumPy scalar types; normalize them so experiment
+        # reports are always serializable by the standard json module.
+        p_value = float(1 - stats.chi2.cdf(chi2, df=1))
         return {
             "n01": n01,
             "n10": n10,
             "chi2": round(chi2, 4),
             "p_value": round(p_value, 6),
-            "significant_at_005": p_value < 0.05,
+            "significant_at_005": bool(p_value < 0.05),
             "verdict": (
                 "Statistically significant difference (p < 0.05)"
                 if p_value < 0.05
@@ -119,11 +121,11 @@ class StatisticalTests:
             abs(float((differences * rng.choice([-1, 1], size=len(differences))).mean())) >= abs(observed)
             for _ in range(n_permutations)
         )
-        p_value = extreme / n_permutations
+        p_value = float(extreme / n_permutations)
         return {
             "observed_accuracy_diff": round(observed, 4),
             "p_value": round(p_value, 6),
-            "significant_at_005": p_value < 0.05,
+            "significant_at_005": bool(p_value < 0.05),
             "n_permutations": n_permutations,
         }
 

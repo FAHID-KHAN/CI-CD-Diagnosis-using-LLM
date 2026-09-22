@@ -25,6 +25,21 @@ protocol → preflight → collection → triage → cohort freeze
 Ground truth must be created with `automated_scripts/annotate_blind.py`, which
 never loads or displays model output.
 
+## Engineering smoke test
+
+The exploratory five-case workflow is separate from the future held-out thesis
+evaluation:
+
+```bash
+make smoke-cohort
+make annotate-smoke ANNOTATOR=<stable-id>
+make pilot
+```
+
+`smoke_manifest.json` records the selection seed, source checksum, selected
+case IDs and the requirement to exclude those cases from future held-out
+evaluation. The command refuses to overwrite an existing smoke cohort.
+
 ## Current implementation status
 
 | Phase | Status | Entry point |
@@ -77,7 +92,8 @@ Later model phases also require:
 OPENAI_API_KEY=your_openai_key
 ```
 
-The local condition requires Ollama and `gpt-oss:20b`, but neither is required
+The local condition requires Ollama and the tracked
+`thesis-qwen3.5:9b-24k` model, but neither is required
 for collection or triage.
 
 ## Phase 1: preflight
@@ -276,16 +292,20 @@ The paired experiment uses:
 
 ```text
 Proprietary:  openai/gpt-5.6-terra
-Open-weights: local/gpt-oss:20b
+Open-weights: local/thesis-qwen3.5:9b-24k
 Reasoning:    medium for both
 ```
+
+The local model uses the `qwen3.5:9b` weights. Its tracked Modelfile fixes
+Ollama's runtime context at 24,576 tokens so the shared 12,000-token filtered
+input is not silently truncated by Ollama's 4K default on this machine.
 
 Verify local availability:
 
 ```bash
 ollama --version
-ollama list
-ollama show gpt-oss:20b --verbose
+make local-model
+ollama show thesis-qwen3.5:9b-24k --verbose
 ```
 
 The benchmark records the resolved model information, Ollama metadata, prompt
@@ -300,7 +320,7 @@ python automated_scripts/benchmark_models.py \
   --input data/studies/thesis_fresh_2026/triaged/eligible_logs.json \
   --ground-truth data/studies/thesis_fresh_2026/ground_truth/ground_truth.json \
   --pilot \
-  --output-dir data/studies/thesis_fresh_2026/experiments/pilot_001
+  --output-dir data/studies/system_smoke_001/experiments/pilot_002
 ```
 
 ### Pilot gate
@@ -320,6 +340,14 @@ discard the pilot outputs and run a new numbered pilot.
 
 ## Phase 7: final paired experiment
 
+Before any model call, the benchmark checks the input against every cohort that
+declares itself exploratory (`exclude_from_future_held_out_evaluation: true` in
+its manifest) and refuses to run if any case has already been used. This
+enforces decision D4. A cohort never excludes its own cases, so the smoke run is
+unaffected. To run anyway — never for thesis evidence — pass
+`--allow-excluded-cases "reason"`; the reason is stored in `run_metadata.json`
+under `partition_guard`.
+
 After pilot approval, lock the configuration and run:
 
 ```bash
@@ -338,11 +366,109 @@ Expected experiment artifacts include:
 ```text
 run_metadata.json
 results_openai_gpt-5.6-terra.json
-results_local_gpt-oss_20b.json
+results_local_thesis-qwen3.5_9b-24k.json
 comparison_report.json
 statistical_tests.json
 cost_accuracy_tradeoff.png
 ```
+
+## Phase 7b: verify and audit the ground truth
+
+Kickoff decision D3 rules out the researcher's unaided judgement as the sole
+basis for accuracy claims. Annotation therefore runs in two passes.
+
+First pass, by the annotator:
+
+```bash
+make annotate-smoke ANNOTATOR=your-stable-id
+```
+
+Each case now also records the evidence that makes its label checkable:
+
+| Evidence method | Required reference |
+| --- | --- |
+| `historical_fix` | fixing commit, pull request or issue URL |
+| `seeded_defect` | defect-seed identifier (fork, branch or patch id) |
+| `expert_review` | expert reasoning and the repository evidence relied on |
+| `combined_adjudicated` | which sources were combined and how they were adjudicated |
+
+Second pass, by a reviewer who is not the annotator:
+
+```bash
+make verify-smoke VERIFIER=second-reviewer-id
+```
+
+The verifier sees the numbered log and neither the model output nor the first
+reviewer's answer. The script compares the two labels afterwards and requires a
+written adjudication for every disagreement; the adjudicated values replace the
+stored `actual_*` fields, and the raw agreement rate is reported so
+inter-rater agreement can be quoted in the thesis.
+
+Then check the file against the agreed requirements:
+
+```bash
+make audit-ground-truth
+```
+
+The audit reports a **blocking** finding for any case with no evidence method,
+no independent verifier, an unusable root cause, an out-of-taxonomy category, or
+an evidence method whose reference is missing. Ground truth with any blocking
+finding must not be used for accuracy claims. The same verdict appears on the
+comparison page and in its data notes.
+
+## Phase 8: compare the generated reports
+
+The benchmark writes one result file per condition. To read those conditions
+against each other rather than one file at a time:
+
+```bash
+make compare                       # every experiment found under data/studies/
+make compare-pilot                 # the pilot run only, plus a JSON export
+
+python automated_scripts/compare_reports.py \
+  --experiment data/studies/thesis_fresh_2026/experiments/final_001 \
+  --open
+```
+
+Each invocation prints a terminal comparison and writes
+`comparison_view.html` into the experiment directory: a self-contained page
+with the model scoreboard, the side-by-side metric bars, the per-log outcome
+matrix against blind ground truth, the four-way agreement split, the
+ground-truth quality verdict, per-category precision/recall/F1 with macro F1,
+evidence-line accuracy, per-condition confusion matrices, the significance tests
+and the full diagnosis text from every condition.
+
+Two metrics are easy to confuse and must be reported separately:
+
+- **Grounding score** checks only that a line the model cited exists in the
+  filtered log it was given. It never consults ground truth, so a model can
+  score 100% while citing entirely the wrong lines.
+- **Evidence-line accuracy** compares the model's `failure_lines` with the
+  annotated supporting lines, and is the one that says whether the model found
+  the right place in the log.
+
+Passing several `--experiment` directories adds an across-runs section that
+measures each model against its earliest run in that comparison. Runs use
+different cohorts unless their input checksums match, so treat those deltas as
+engineering signal, not as thesis evidence.
+
+Every metric on the page is recomputed from the per-log
+`results_<model>.json` files using the same definitions the benchmark applies,
+so an interrupted run that never wrote its summary still compares correctly. A
+missing or truncated report file is reported as a data note on the page instead
+of failing the comparison.
+
+Useful flags:
+
+| Flag | Effect |
+| --- | --- |
+| `--experiment DIR` | Include one experiment; repeat for a cross-run comparison |
+| `--list` | Show the experiments that were found, then exit |
+| `--json PATH` | Also write the aligned comparison data as JSON |
+| `--output PATH` | Write the page somewhere other than the experiment directory |
+| `--no-html` | Terminal comparison only |
+| `--open` | Open the page in the default browser |
+| `--ground-truth PATH` | Override the annotations used for every experiment |
 
 ## Final verification checklist
 
@@ -356,6 +482,10 @@ cost_accuracy_tradeoff.png
 - [ ] Requested and resolved model identifiers are recorded.
 - [ ] Every failed inference remains in the result files.
 - [ ] Reported thesis values are generated from the preserved final outputs.
+- [ ] The comparison page for the final run reports no data notes.
+- [ ] `make audit-ground-truth` reports no blocking finding for the final cohort.
+- [ ] Every final case is evidence-linked and verified by a second reviewer.
+- [ ] The partition guard ran without an `--allow-excluded-cases` override.
 
 The repository no longer contains the legacy API, RAG, human-study,
 model-visible annotation or demonstration-evaluation paths. All supported

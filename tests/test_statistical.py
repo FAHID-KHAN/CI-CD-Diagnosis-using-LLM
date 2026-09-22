@@ -1,5 +1,6 @@
 """Quick smoke test for new statistical tests and cost tracking."""
 
+import json
 import os
 import tempfile
 
@@ -38,6 +39,7 @@ def test_mcnemar():
     assert "chi2" in result
     assert "verdict" in result
     assert 0 <= result["p_value"] <= 1
+    json.dumps(result)
 
 
 def test_bootstrap_ci():
@@ -53,6 +55,7 @@ def test_permutation():
     result = StatisticalTests.paired_permutation_test(preds_a, preds_b)
     assert "p_value" in result
     assert 0 <= result["p_value"] <= 1
+    json.dumps(result)
 
 
 def test_cost_accuracy_chart():
@@ -62,7 +65,7 @@ def test_cost_accuracy_chart():
             "cost_per_diagnosis_usd": 0.002,
             "avg_execution_time_ms": 1500,
         },
-        "local/gpt-oss:20b": {
+        "local/thesis-qwen3.5:9b-24k": {
             "accuracy": 0.72,
             "cost_per_diagnosis_usd": 0.0,
             "avg_execution_time_ms": 4000,
