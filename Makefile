@@ -1,4 +1,4 @@
-.PHONY: help install test local-model preflight collect triage smoke-cohort annotate annotate-smoke pilot final compare compare-pilot verify verify-smoke audit-ground-truth
+.PHONY: help install test local-model preflight collect triage smoke-cohort annotate annotate-smoke pilot final compare compare-pilot verify verify-smoke audit-ground-truth architecture status
 
 STUDY_CONFIG := configs/thesis_fresh_2026.yaml
 STUDY_ROOT := data/studies/thesis_fresh_2026
@@ -6,6 +6,9 @@ SMOKE_ROOT := data/studies/system_smoke_001
 
 help:
 	@echo "Controlled thesis commands:"
+	@echo "  ./run_workflow.sh status  Where the study stands, and what to do next"
+	@echo "  ./run_workflow.sh --help  Every stage from one entry point"
+	@echo ""
 	@echo "  make install             Install the lean project environment"
 	@echo "  make test                Run offline tests"
 	@echo "  make local-model         Create the fixed Qwen 3.5 thesis model"
@@ -22,6 +25,7 @@ help:
 	@echo "  make final               Run the complete paired experiment"
 	@echo "  make compare             Compare every experiment found, visually"
 	@echo "  make compare-pilot       Compare the pilot run only"
+	@echo "  make architecture        Regenerate the architecture diagram"
 
 install:
 	python -m pip install -e ".[dev]"
@@ -97,3 +101,21 @@ compare-pilot:
 	python automated_scripts/compare_reports.py \
 		--experiment $(SMOKE_ROOT)/experiments/pilot_002 \
 		--json $(SMOKE_ROOT)/experiments/pilot_002/comparison_data.json
+
+# The diagram is generated from docs/make_architecture.py, so it can be
+# corrected and diffed rather than being an opaque committed image.
+CHROME ?= /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+
+architecture:
+	python docs/make_architecture.py
+	@height=$$(python -c "import re;print(re.search(r'<svg[^>]*height=\"(\\d+)\"', open('docs/architecture.svg').read()).group(1))"); \
+	"$(CHROME)" --headless --disable-gpu --hide-scrollbars \
+		--force-device-scale-factor=2 --window-size=2400,$$height \
+		--screenshot=docs/architecture.png docs/architecture.svg 2>/dev/null; \
+	echo "Wrote docs/architecture.png"
+
+# Same inspector run_workflow.sh uses; judged from the files on disk. A blocking
+# stage is shown with [!] rather than failing the target, because this one is for
+# reading; './run_workflow.sh final' is where the non-zero exit gates the run.
+status:
+	@python automated_scripts/study_status.py --study-config $(STUDY_CONFIG) || true

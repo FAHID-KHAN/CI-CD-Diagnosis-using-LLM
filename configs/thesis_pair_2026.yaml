@@ -1,0 +1,62 @@
+# Two-repository protocol for the held-out thesis evaluation (kickoff decision D2).
+#
+# Pair rationale: django/django and gradle/gradle contrast on language, build tool
+# and log convention (Python with pytest/flake8 against JVM with Gradle), while
+# staying within one order of magnitude on log size. That second criterion is a
+# feasibility one, and it matters: above roughly 3,000 lines the log filter
+# saturates its token budget, so the model receives a fixed-size window and the
+# measurement drifts towards testing the filter rather than the model. Measured
+# medians from the six-repository run, with the share of each log the model
+# actually receives after filtering:
+#
+#   django/django     256 lines   model sees 22.7%
+#   gradle/gradle   2,526 lines   model sees 10.0%
+#   facebook/react 48,815 lines   model sees  0.6%   <- previously paired, dropped
+#
+# Repositories were selected on log tractability and ecosystem contrast, never on
+# model performance. Confirm the pair against the historical failure-to-fix
+# feasibility check before freezing it.
+#
+# Target arithmetic, from the observed yield of the six-repository run:
+#   raw      = 2 repositories x 15 = 30
+#   eligible = django 9/15 and gradle 15/15 were eligible there, so expect ~24.
+#   The eligible range below allows a worse yield than observed without
+#   accepting a collection that has silently gone wrong.
+study_id: thesis_pair_2026
+title: Two-repository contrasting GitHub Actions failure dataset (Python and JVM)
+source: github_actions
+unit_of_analysis: failed_workflow_run
+sampling_method: latest_failed_runs_per_repository
+auto_discovery: false
+target_raw_logs: 30
+target_eligible_logs:
+  minimum: 16
+  maximum: 30
+
+repositories:
+  - name: django/django
+    max_logs: 15
+    ecosystem: python
+  - name: gradle/gradle
+    max_logs: 15
+    ecosystem: jvm
+
+eligibility:
+  required_conclusion: failure
+  minimum_log_lines: 20
+  maximum_duplicate_error_signatures_per_repository: 2
+  require_downloadable_log: true
+
+exclusions:
+  - cancelled_run
+  - token_error
+  - too_short
+  - duplicate_error
+  - unavailable_log
+  - used_in_exploratory_cohort
+
+research_controls:
+  use_fixed_repository_list: true
+  preserve_raw_logs: true
+  blind_annotation: true
+  do_not_tune_on_final_dataset: true

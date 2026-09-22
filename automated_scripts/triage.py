@@ -22,6 +22,7 @@ from automated_scripts.study_utils import (
     study_directory,
     utc_now,
 )
+from src.evaluation.case_partitions import load_exclusions
 
 SKIP_PATTERNS = [
     r"The operation was canceled",
@@ -64,13 +65,29 @@ def exclusion_record(log: dict, reason: str, **details) -> dict:
     return record
 
 
-def triage_logs(logs: list, min_lines: int = 20, max_duplicates: int = 2) -> tuple[list, list]:
+def triage_logs(
+    logs: list,
+    min_lines: int = 20,
+    max_duplicates: int = 2,
+    exploratory: dict | None = None,
+) -> tuple[list, list]:
     kept = []
     excluded = []
     signature_counts = defaultdict(int)
+    exploratory = exploratory or {}
 
     for log in logs:
         content = log.get("log_content", "")
+        # A case an exploratory cohort has already used cannot carry held-out
+        # evidence (kickoff decision D4). Excluding it here keeps the cohort
+        # clean by construction, records the reason alongside every other
+        # exclusion, and avoids spending annotation effort on an unusable case.
+        used_by = exploratory.get(log.get("log_id"))
+        if used_by is not None:
+            excluded.append(
+                exclusion_record(log, "used_in_exploratory_cohort", exploratory_cohort=used_by.cohort_id)
+            )
+            continue
         if any(re.search(pattern, content, re.IGNORECASE) for pattern in SKIP_PATTERNS):
             excluded.append(exclusion_record(log, "cancelled_run"))
             continue
@@ -127,7 +144,10 @@ def main() -> int:
     rules = config["eligibility"]
     min_lines = int(rules["minimum_log_lines"])
     max_duplicates = int(rules["maximum_duplicate_error_signatures_per_repository"])
-    eligible, excluded = triage_logs(logs, min_lines, max_duplicates)
+    exploratory, manifest_problems = load_exclusions(str(root.parent), str(eligible_path))
+    for problem in manifest_problems:
+        print(f"WARNING: {problem}")
+    eligible, excluded = triage_logs(logs, min_lines, max_duplicates, exploratory)
     atomic_write_json(eligible_path, eligible)
     atomic_write_json(excluded_path, excluded)
 
@@ -145,6 +165,7 @@ def main() -> int:
         "rules": {
             "minimum_log_lines": min_lines,
             "maximum_duplicate_error_signatures_per_repository": max_duplicates,
+            "exploratory_cases_known": len(exploratory),
         },
         "input": {"file": str(raw_path), "sha256": sha256_file(raw_path), "count": len(logs)},
         "eligible": {"file": str(eligible_path), "sha256": sha256_file(eligible_path), "count": len(eligible)},

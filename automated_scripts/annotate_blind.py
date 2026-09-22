@@ -30,7 +30,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from automated_scripts.study_utils import atomic_write_json, load_study_config, study_directory
-from src.evaluation.ground_truth_audit import EVIDENCE_METHODS, MIN_ROOT_CAUSE_CHARS, root_cause_problem
+from src.evaluation.ground_truth_audit import (
+    EVIDENCE_METHODS,
+    MIN_ROOT_CAUSE_CHARS,
+    records_uncertainty,
+    restates_category,
+    root_cause_problem,
+)
 
 SCHEMA_VERSION = 2
 
@@ -96,15 +102,22 @@ def prompt_required(label: str) -> str:
         print("A value is required. Enter q to save and quit.")
 
 
-def prompt_root_cause(label: str = "Actual root cause") -> str:
-    """Require a written cause, not the category digit typed one prompt late."""
+def prompt_root_cause(label: str = "Actual root cause", category: str | None = None) -> str:
+    """Require a written cause: not the category digit, and not the category again."""
     while True:
         value = prompt_required(label)
         problem = root_cause_problem(value)
-        if problem is None:
-            return value
-        print(f"  That root cause {problem}.")
-        print(f"  Describe what actually broke, in at least {MIN_ROOT_CAUSE_CHARS} characters.")
+        if problem is not None:
+            print(f"  That root cause {problem}.")
+            print(f"  Describe what actually broke, in at least {MIN_ROOT_CAUSE_CHARS} characters.")
+            continue
+        if category and restates_category(value, category):
+            print(f"  That only repeats the category {category!r} in other words.")
+            print("  A second reviewer needs a claim they can agree or disagree with.")
+            continue
+        if records_uncertainty(value):
+            print("  Recorded as unresolved. Note it in the ambiguity field so it is visible later.")
+        return value
 
 
 def prompt_failure_lines() -> list[int]:
@@ -173,15 +186,108 @@ def save(output_path: Path, payload: dict, annotations: dict) -> None:
     atomic_write_json(output_path, payload)
 
 
+def show_marked_lines(root: Path, record: dict, log: dict) -> None:
+    """Print the lines this case was annotated against, so the evidence is at hand."""
+    lines = record.get("failure_lines") or []
+    if not lines:
+        print("  No supporting lines were recorded for this case.")
+        return
+    content = log.get("log_content", "").splitlines()
+    print("\n  Lines you marked as evidence:")
+    for number in lines[:40]:
+        if 1 <= number <= len(content):
+            print(f"    {number:>7}  {content[number - 1][:150]}")
+        else:
+            print(f"    {number:>7}  (line is outside this log)")
+    if len(lines) > 40:
+        print(f"    ... and {len(lines) - 40} more")
+
+
+def needs_recheck(record: dict) -> str | None:
+    """Why this case cannot yet carry an accuracy claim, or None if it can."""
+    cause = record.get("actual_root_cause")
+    problem = root_cause_problem(cause)
+    if problem:
+        return f"the root cause {problem}"
+    if restates_category(str(cause), record.get("actual_error_type")):
+        return "the root cause only repeats its category in other words"
+    if records_uncertainty(str(cause)):
+        return "the root cause records unresolved uncertainty"
+    return None
+
+
+def run_recheck(logs: list[dict], root: Path, output_path: Path, payload: dict, annotator: str) -> int:
+    """Revisit only the cases the audit flags, keeping the rest untouched."""
+    annotations = {item["log_id"]: item for item in payload.get("annotations", [])}
+    by_id = {log["log_id"]: log for log in logs}
+    flagged = [(log_id, needs_recheck(record)) for log_id, record in annotations.items()]
+    flagged = [(log_id, reason) for log_id, reason in flagged if reason]
+    if not flagged:
+        print("Every annotation states a usable root cause. Nothing to recheck.")
+        return 0
+
+    print(f"{len(flagged)} case(s) need a clearer root cause.")
+    for index, (log_id, reason) in enumerate(flagged, 1):
+        record = annotations[log_id]
+        log = by_id.get(log_id)
+        if log is None:
+            print(f"\nSkipping {log_id}: not in the current cohort.")
+            continue
+        review_path = write_review_log(root, log)
+        print("\n" + "=" * 72)
+        print(f"Case {index}/{len(flagged)}: {record['repository']} — {record.get('workflow_name', '')}")
+        print(f"Reason: {reason}")
+        print(f"Numbered log: {review_path}")
+        print(f"\n  Recorded category   : {record.get('actual_error_type')}")
+        print(f"  Recorded root cause : {record.get('actual_root_cause')!r}")
+        show_marked_lines(root, record, log)
+        print()
+        try:
+            keep = input("Keep the recorded category? [Y/n]: ").strip().lower()
+            error_type = record.get("actual_error_type") if keep in ("", "y", "yes") else choose_error_type()
+            root_cause = prompt_root_cause("Revised root cause", category=error_type)
+            relines = input("Re-enter supporting lines? [y/N]: ").strip().lower()
+            failure_lines = prompt_failure_lines() if relines in ("y", "yes") else record.get("failure_lines", [])
+            notes = input("Notes or ambiguity flag (optional): ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\nSaving recheck progress.")
+            save(output_path, payload, annotations)
+            return 0
+
+        record.setdefault("revision_history", []).append(
+            {
+                "superseded_error_type": record.get("actual_error_type"),
+                "superseded_root_cause": record.get("actual_root_cause"),
+                "reason": reason,
+                "revised_by": annotator,
+                "revised_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        record["actual_error_type"] = error_type
+        record["actual_root_cause"] = root_cause
+        record["failure_lines"] = failure_lines
+        if notes:
+            record["notes"] = notes
+        save(output_path, payload, annotations)
+        print(f"Revised {index}/{len(flagged)}.")
+
+    remaining = sum(1 for item in annotations.values() if needs_recheck(item))
+    print(f"\nRecheck complete. {remaining} case(s) still flagged.")
+    return 0
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Blindly annotate or independently verify the thesis cohort")
     parser.add_argument("--study-config", default="configs/thesis_fresh_2026.yaml")
     parser.add_argument("--study-dir", default=None)
     parser.add_argument(
         "--mode",
-        choices=("annotate", "verify"),
+        choices=("annotate", "verify", "recheck"),
         default="annotate",
-        help="annotate: first blind labelling. verify: independent second review and adjudication.",
+        help=(
+            "annotate: first blind labelling. verify: independent second review and adjudication. "
+            "recheck: revisit only the cases whose root cause the audit flags."
+        ),
     )
     parser.add_argument("--annotator", required=True, help="Stable reviewer identifier, not a secret")
     return parser.parse_args()
@@ -195,7 +301,7 @@ def run_annotate(logs: list[dict], root: Path, output_path: Path, payload: dict,
         present_case(root, log, index, len(logs), "annotate")
         try:
             error_type = choose_error_type()
-            root_cause = prompt_root_cause()
+            root_cause = prompt_root_cause(category=error_type)
             failure_lines = prompt_failure_lines()
             evidence = collect_evidence()
             notes = input("Notes or ambiguity flag (optional): ").strip()
@@ -244,7 +350,7 @@ def run_verify(logs: list[dict], root: Path, output_path: Path, payload: dict, v
         present_case(root, log, index, len(pending), "verify")
         try:
             error_type = choose_error_type()
-            root_cause = prompt_root_cause("Your root cause")
+            root_cause = prompt_root_cause("Your root cause", category=error_type)
             failure_lines = prompt_failure_lines()
         except (KeyboardInterrupt, EOFError):
             print("\nSaving verification progress.")
@@ -267,7 +373,7 @@ def run_verify(logs: list[dict], root: Path, output_path: Path, payload: dict, v
                 adjudication = prompt_required("Adjudicated decision and reasoning")
                 final_type = choose_from(ERROR_TYPES, "Adjudicated error type")
                 record["actual_error_type"] = final_type
-                record["actual_root_cause"] = prompt_root_cause("Adjudicated root cause")
+                record["actual_root_cause"] = prompt_root_cause("Adjudicated root cause", category=final_type)
                 record["failure_lines"] = prompt_failure_lines()
         except (KeyboardInterrupt, EOFError):
             print("\nSaving verification progress.")
@@ -322,7 +428,7 @@ def main() -> int:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "annotations": [],
         }
-    if args.mode == "annotate" and payload.get("annotator") != args.annotator:
+    if args.mode in ("annotate", "recheck") and payload.get("annotator") != args.annotator:
         print("ERROR: Existing ground truth belongs to a different annotator identifier.")
         return 1
     if args.mode == "verify" and payload.get("annotator") == args.annotator:
@@ -346,6 +452,8 @@ def main() -> int:
     if args.mode == "verify":
         payload["verifier"] = args.annotator
         return run_verify(logs, root, output_path, payload, args.annotator)
+    if args.mode == "recheck":
+        return run_recheck(logs, root, output_path, payload, args.annotator)
     return run_annotate(logs, root, output_path, payload, args.annotator)
 
 

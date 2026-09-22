@@ -12,6 +12,11 @@ has reached its methodology-approval and tool-update gates.
 
 ![Architecture](docs/architecture.png)
 
+The diagram separates the **artifact** being evaluated (filter, prompt, schema,
+grounding check) from the **evaluation apparatus** that produces and checks the
+evidence. It is generated from [docs/make_architecture.py](docs/make_architecture.py);
+run `make architecture` after changing the system.
+
 ## Research conditions
 
 - Proprietary: `openai/gpt-5.6-terra`
@@ -36,6 +41,26 @@ commit `.env`.
 
 ## Controlled workflow
 
+`run_workflow.sh` is the single entry point for every stage. Each stage is
+judged by the files it leaves on disk rather than by whether a command appeared
+to succeed, so this is the truthful answer to "what have I actually got?":
+
+```bash
+./run_workflow.sh status
+```
+
+```text
+  [x] Study protocol frozen      6 repositories, study_id=thesis_fresh_2026
+  [x] Collection                 90 raw logs from 6 repositories
+  [x] Triage                     74 eligible, 16 excluded with reasons
+  [ ] Ground truth               0 of 74 cases annotated
+  [!] Held-out separation        5 case(s) already used by system_smoke_001
+  Next: ./run_workflow.sh annotate ANNOTATOR=<your-id>
+```
+
+`[!]` marks a blocking problem and makes the command exit non-zero, so the same
+check gates the held-out run. Run `./run_workflow.sh --help` for every command.
+
 Prepare the fresh cohort:
 
 ```bash
@@ -45,11 +70,18 @@ Prepare the fresh cohort:
 This performs the offline checks, one-log live preflight, fixed collection and
 auditable triage. It stops before human annotation.
 
-For an engineering-only end-to-end check, create the reproducible five-case
-smoke cohort:
+For an engineering-only end-to-end check, run the whole path in one command.
+It creates the five-case smoke cohort, runs the paired pilot and produces the
+comparison, stopping with an explicit message at any step that needs a human:
 
 ```bash
-make smoke-cohort
+./run_workflow.sh engineering
+```
+
+To verify the code itself offline — lint, type check and the full test suite:
+
+```bash
+./run_workflow.sh check
 ```
 
 Create blind ground truth for those five cases:
@@ -137,7 +169,7 @@ crash.
 
 ```text
 configs/thesis_fresh_2026.yaml       Fixed study protocol
-run_workflow.sh                      Cohort preparation entry point
+run_workflow.sh                      Single entry point for every stage
 automated_scripts/
   preflight_study.py                 Environment and one-log check
   data_collection.py                 Immutable GitHub collection
@@ -145,6 +177,7 @@ automated_scripts/
   annotate_blind.py                  Model-independent ground truth
   benchmark_models.py                Paired pilot and final experiment
   compare_reports.py                 Terminal and visual report comparison
+  study_status.py                    Stage-by-stage state from the files on disk
   study_utils.py                     Checksums and atomic storage
 src/
   data_collection/                   GitHub Actions client

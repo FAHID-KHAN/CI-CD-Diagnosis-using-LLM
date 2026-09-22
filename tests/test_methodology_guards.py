@@ -74,6 +74,34 @@ def test_an_unreadable_manifest_is_reported_rather_than_skipped_silently(tmp_pat
     assert len(problems) == 1 and "could not be read" in problems[0]
 
 
+def test_triage_excludes_a_case_an_exploratory_cohort_already_used():
+    """The cohort is kept clean by construction, with the reason recorded."""
+    from automated_scripts.triage import triage_logs
+    from src.evaluation.case_partitions import ExcludedCase
+
+    logs = [
+        {"log_id": "a", "repository": "org/one", "log_content": "error: boom\n" * 30},
+        {"log_id": "b", "repository": "org/one", "log_content": "failure: other\n" * 30},
+    ]
+    exploratory = {
+        "b": ExcludedCase("b", "smoke_001", "smoke_manifest.json", "engineering_smoke_test"),
+    }
+    eligible, excluded = triage_logs(logs, min_lines=5, max_duplicates=2, exploratory=exploratory)
+
+    assert [case["log_id"] for case in eligible] == ["a"]
+    assert len(excluded) == 1
+    assert excluded[0]["reason"] == "used_in_exploratory_cohort"
+    assert excluded[0]["exploratory_cohort"] == "smoke_001"
+
+
+def test_triage_without_exploratory_cohorts_keeps_everything_eligible():
+    from automated_scripts.triage import triage_logs
+
+    logs = [{"log_id": "a", "repository": "org/one", "log_content": "error: boom\n" * 30}]
+    eligible, excluded = triage_logs(logs, min_lines=5, max_duplicates=2)
+    assert len(eligible) == 1 and excluded == []
+
+
 # ── D3: ground truth needs evidence and independent verification ──────────
 
 
@@ -101,6 +129,35 @@ def test_a_bare_menu_digit_is_rejected_as_a_root_cause():
     assert root_cause_problem("") == "is empty"
     assert root_cause_problem(None) == "is empty"
     assert root_cause_problem("A trailing comma in codes.json broke Jest's setup module.") is None
+
+
+def test_a_root_cause_that_only_repeats_its_category_is_rejected():
+    """Padding to clear the length floor must not pass as an explanation."""
+    from src.evaluation.ground_truth_audit import restates_category
+
+    assert restates_category("build configuration issue", "build_configuration")
+    assert restates_category("syntax error from the log", "syntax_error")
+    # A typo in the restatement is still a restatement.
+    assert restates_category("build configuratio problem", "build_configuration")
+    # Real explanations survive, including under the catch-all category.
+    assert not restates_category("5 snapshots failed in the Jest suite for fabric", "test_failure")
+    assert not restates_category("drop hyphen in alphanumeric characters", "unknown")
+
+    audit = audit_annotations(
+        [_annotation(actual_root_cause="build configuration issue", actual_error_type="build_configuration")]
+    )
+    assert not audit.is_defensible
+    assert any(finding.code == "root_cause_restates_category" for finding in audit.findings)
+
+
+def test_recorded_uncertainty_warns_without_blocking():
+    """Honest uncertainty is worth keeping, but it cannot score a model."""
+    audit = audit_annotations([_annotation(actual_root_cause="no idea where the error happened here")])
+    codes = {finding.code for finding in audit.findings}
+    assert "unresolved_root_cause" in codes
+    # A warning does not block, and the case still counts as annotated.
+    assert audit.is_defensible
+    assert audit.usable_root_causes == 1
 
 
 def test_a_complete_annotation_passes_every_requirement():

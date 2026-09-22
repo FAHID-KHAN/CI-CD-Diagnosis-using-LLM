@@ -28,6 +28,31 @@ EVIDENCE_METHODS = ("historical_fix", "seeded_defect", "expert_review", "combine
 # bare number is the category-menu digit typed one prompt too late.
 MIN_ROOT_CAUSE_CHARS = 25
 
+# Words that carry no diagnostic content when deciding whether a root cause says
+# anything beyond the category name it was filed under.
+STOPWORDS = frozenset(
+    "the a an of on in for from to is was were and or at by with this that it its "
+    "as be been has have had not no when while during".split()
+)
+
+# A root cause that reduces to fewer than this many content words, once the
+# category's own words are removed, is a restatement rather than an explanation.
+MIN_CONTENT_WORDS = 3
+
+# Phrases that record unresolved uncertainty. Honest, but a case labelled this
+# way cannot score a model, so it belongs in notes or out of the cohort.
+UNCERTAINTY_PHRASES = (
+    "no idea",
+    "not sure",
+    "unsure",
+    "unclear",
+    "dont know",
+    "don't know",
+    "cannot tell",
+    "can't tell",
+    "could not determine",
+)
+
 SEVERITY_ORDER = {"blocking": 0, "warning": 1}
 
 
@@ -102,6 +127,26 @@ class GroundTruthAudit:
         }
 
 
+def restates_category(text: str, category: object) -> bool:
+    """True when a root cause is essentially the category name written again.
+
+    ``"build configuration issue"`` filed under ``build_configuration`` adds
+    nothing a second reviewer could adjudicate against, but it clears a length
+    floor, so length alone cannot catch it.
+    """
+    if not isinstance(category, str):
+        return False
+    category_words = set(re.findall(r"[a-z]+", category.lower()))
+    words = [word for word in re.findall(r"[a-z0-9]+", text.lower()) if len(word) > 2]
+    content = [word for word in words if word not in category_words and word not in STOPWORDS]
+    return len(content) < MIN_CONTENT_WORDS
+
+
+def records_uncertainty(text: str) -> bool:
+    lowered = text.lower()
+    return any(phrase in lowered for phrase in UNCERTAINTY_PHRASES)
+
+
 def root_cause_problem(value: object) -> Optional[str]:
     """Explain why a root-cause field is unusable, or return None if it is fine."""
     if not isinstance(value, str) or not value.strip():
@@ -130,13 +175,35 @@ def audit_annotations(annotations: List[dict], path: str = "", exists: bool = Tr
     for record in annotations:
         case_id = record.get("log_id")
 
-        problem = root_cause_problem(record.get("actual_root_cause"))
+        root_cause = record.get("actual_root_cause")
+        problem = root_cause_problem(root_cause)
         if problem:
             audit.findings.append(
                 Finding(
                     "unusable_root_cause",
                     "blocking",
                     f"The recorded root cause {problem}.",
+                    case_id,
+                )
+            )
+        elif restates_category(str(root_cause), record.get("actual_error_type")):
+            audit.findings.append(
+                Finding(
+                    "root_cause_restates_category",
+                    "blocking",
+                    f"The root cause {str(root_cause)!r} only repeats its category in other words, "
+                    "so it states nothing a second reviewer could adjudicate against.",
+                    case_id,
+                )
+            )
+        elif records_uncertainty(str(root_cause)):
+            audit.usable_root_causes += 1
+            audit.findings.append(
+                Finding(
+                    "unresolved_root_cause",
+                    "warning",
+                    f"The root cause {str(root_cause)!r} records unresolved uncertainty. Honest, but a "
+                    "model cannot be scored against it — flag it in notes, or exclude the case.",
                     case_id,
                 )
             )

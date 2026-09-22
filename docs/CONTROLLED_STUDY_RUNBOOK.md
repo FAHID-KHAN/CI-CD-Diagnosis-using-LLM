@@ -12,6 +12,10 @@ approved and implemented.
 
 ![Controlled architecture](architecture.png)
 
+Generated from `docs/make_architecture.py` via `make architecture`. The current
+system has no rule-based or heuristic baseline; whether one is in scope is an
+open decision for the methodology review.
+
 ## Purpose and safety boundary
 
 The controlled workflow enforces the following order:
@@ -95,6 +99,29 @@ OPENAI_API_KEY=your_openai_key
 The local condition requires Ollama and the tracked
 `thesis-qwen3.5:9b-24k` model, but neither is required
 for collection or triage.
+
+## Checking where the study stands
+
+Every phase below leaves artefacts on disk, and `run_workflow.sh status` judges
+each phase by those artefacts rather than by whether a command appeared to
+succeed. Run it between any two phases, or whenever you return to the project:
+
+```bash
+./run_workflow.sh status
+./run_workflow.sh status --study-dir data/studies/system_smoke_001
+```
+
+States are `[x]` done, `[~]` partial, `[ ]` not started and `[!]` blocking. Any
+`[!]` makes the command exit non-zero, and the same inspector gates the
+held-out run, so `./run_workflow.sh final` refuses while ground truth is
+incomplete or the cohort overlaps an exploratory set.
+
+`./run_workflow.sh --help` lists every command. The stage commands map onto the
+phases below: `cohort` (phases 1-2), `smoke`, `annotate` / `verify` / `audit`
+(phases 4 and 7b), `pilot` (phase 6), `final` (phase 7) and `compare`
+(phase 8). `./run_workflow.sh check` runs lint, type check and the offline test
+suite; `./run_workflow.sh engineering` runs the whole engineering path in one
+command and stops with an explicit message at any step that needs a human.
 
 ## Phase 1: preflight
 
