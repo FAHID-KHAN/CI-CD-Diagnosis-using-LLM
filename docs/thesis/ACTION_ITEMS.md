@@ -47,7 +47,7 @@ work, not chosen by you alone.
 **From the meeting:** A1, D6
 
 ### 5. Finish the evaluation plan
-**Do:** Open `docs/thesis/EVALUATION_PLAN_DRAFT.md`. Answer the nine decisions in
+**Do:** Open `docs/thesis/EVALUATION_PLAN.md`. Answer the six decisions in
 Section 10. Rewrite anything that does not sound like you.
 **Why:** This is the actual thing the supervisors asked you to bring.
 **Done when:** No `[DECISION]` marker is left unanswered.

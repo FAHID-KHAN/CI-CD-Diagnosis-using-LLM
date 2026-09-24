@@ -98,7 +98,7 @@ local inference.
 
 ## Open decisions
 
-Nine, listed in `docs/thesis/EVALUATION_PLAN_DRAFT.md` §10. The ones that block
+Six, listed in `docs/thesis/EVALUATION_PLAN.md` §10. The ones that block
 annotation:
 
 - Keep eight failure categories and widen the data, or cut the categories down.
@@ -113,7 +113,7 @@ baseline**, and **root-cause / suggested-fix quality scoring**.
 | Path | What |
 | --- | --- |
 | `docs/thesis/ACTION_ITEMS.md` | What to do next, in order |
-| `docs/thesis/EVALUATION_PLAN_DRAFT.md` | The plan for the supervision review |
+| `docs/thesis/EVALUATION_PLAN.md` | The plan to send to supervisors |
 | `docs/architecture/CONTROLLED_STUDY_RUNBOOK.md` | Exact operating procedure |
 | `docs/architecture/architecture.png` | The system in one picture |
 | `docs/archive/` | Superseded. Describes RAG, ChromaDB and models that are gone |
