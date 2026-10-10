@@ -16,6 +16,7 @@ Three folders. Only the first two describe the current system.
 | File | What it is |
 | --- | --- |
 | [ACTION_ITEMS.md](thesis/ACTION_ITEMS.md) | **Start here.** What to do, in order |
+| [SUPERVISOR_CONDITIONS.md](thesis/SUPERVISOR_CONDITIONS.md) | Supervisor feedback, what it settles, and what is still outstanding |
 | [EVALUATION_PLAN.md](thesis/EVALUATION_PLAN.md) | The plan to send to supervisors. Six decisions to answer first |
 | [THESIS_EXECUTION_ROADMAP_2026-09-21.md](thesis/THESIS_EXECUTION_ROADMAP_2026-09-21.md) | Phase-by-phase roadmap from the kickoff meeting |
 | [KICKOFF_ACTION_ITEM_VERIFICATION.md](thesis/KICKOFF_ACTION_ITEM_VERIFICATION.md) | Each meeting decision checked against the actual code |

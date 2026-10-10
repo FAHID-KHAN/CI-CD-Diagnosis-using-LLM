@@ -102,6 +102,94 @@ def test_triage_without_exploratory_cohorts_keeps_everything_eligible():
     assert len(eligible) == 1 and excluded == []
 
 
+# ── Repository gate: which repositories may enter the study at all ────────
+
+
+def test_gate_classifies_build_and_test_jobs_as_in_scope():
+    from tools.check_repository_gate import IN_SCOPE, classify
+
+    assert classify("test (3.12)", "Run pytest") == IN_SCOPE
+    assert classify("build", "Build with Gradle") == IN_SCOPE
+    assert classify("ci", "npm ci") == IN_SCOPE
+    assert classify("integration", "Run integration suite") == IN_SCOPE
+
+
+def test_gate_excludes_lint_docs_spell_and_admin_jobs():
+    from tools.check_repository_gate import classify
+
+    assert classify("lint", "Run flake8") == "lint_format"
+    assert classify("Docs", "Build documentation") == "docs"
+    assert classify("Spell Check", "codespell") == "spell"
+    assert classify("Check commit prefix", "Verify commit message") == "admin_other"
+
+
+def test_gate_prefers_the_excluded_bucket_when_a_name_matches_both():
+    """'Build docs' is a documentation job, not a build job."""
+    from tools.check_repository_gate import classify
+
+    assert classify("Build docs", "Build sphinx documentation") == "docs"
+    assert classify("build", "Run prettier --check") == "lint_format"
+
+
+def test_gate_reports_an_unrecognised_job_rather_than_guessing():
+    from tools.check_repository_gate import UNKNOWN, classify
+
+    assert classify("", "") == UNKNOWN
+    assert classify("mystery-job", "do the thing") == UNKNOWN
+
+
+def test_gate_verdict_requires_all_four_criteria():
+    from tools.check_repository_gate import IN_SCOPE, evaluate
+
+    def case(classification=IN_SCOPE, log=True, linked=True, workflow="CI"):
+        return {"classification": classification, "log_available": log, "repair_linked": linked, "workflow": workflow}
+
+    # Thirty in-scope, logged, repair-linked cases spread over two workflows.
+    good = [case(workflow="CI" if i % 2 else "Build") for i in range(30)]
+    assert evaluate({"cases": good}, min_logs=30, min_repairs=15)["passed"]
+
+    # One missing log drops criterion 1 below its threshold.
+    short = [case(log=(i > 0)) for i in range(30)]
+    result = evaluate({"cases": short}, min_logs=30, min_repairs=15)
+    assert not result["passed"]
+    assert result["criteria"][0]["passed"] is False
+
+    # Mostly lint failures fails criterion 2 even with logs and repairs.
+    linty = [case(classification="lint_format" if i > 9 else IN_SCOPE) for i in range(30)]
+    assert evaluate({"cases": linty}, min_logs=30, min_repairs=15)["criteria"][1]["passed"] is False
+
+    # A single dominant workflow fails criterion 4.
+    dominated = [case(workflow="CI") for _ in range(30)]
+    assert evaluate({"cases": dominated}, min_logs=30, min_repairs=15)["criteria"][3]["passed"] is False
+
+
+def test_adjudication_preserves_both_independent_labels():
+    """Cohen's kappa needs both original labels, so consensus must not overwrite one.
+
+    Mirrors what run_verify records: the first reviewer's labels are snapshotted
+    before an adjudicated value replaces the stored consensus.
+    """
+    record = {
+        "log_id": "a",
+        "actual_error_type": "syntax_error",
+        "actual_root_cause": "A trailing comma broke the generated JSON map.",
+        "failure_lines": [12],
+    }
+    verifier_label = "build_configuration"
+
+    record.setdefault("annotator_error_type", record.get("actual_error_type"))
+    record.setdefault("annotator_root_cause", record.get("actual_root_cause"))
+    record.setdefault("annotator_failure_lines", list(record.get("failure_lines", [])))
+    record["actual_error_type"] = "dependency_error"  # the adjudicated consensus
+    record["verifier_error_type"] = verifier_label
+
+    assert record["annotator_error_type"] == "syntax_error"
+    assert record["verifier_error_type"] == "build_configuration"
+    assert record["actual_error_type"] == "dependency_error"
+    # All three are distinguishable, so agreement can still be computed.
+    assert len({record["annotator_error_type"], record["verifier_error_type"]}) == 2
+
+
 # ── D3: ground truth needs evidence and independent verification ──────────
 
 

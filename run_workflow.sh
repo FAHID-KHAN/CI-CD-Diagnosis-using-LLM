@@ -117,7 +117,7 @@ run_status() {
 
 cmd_check() {
     step "Lint"
-    "${PYTHON}" -m flake8 src/ automated_scripts/ tests/
+    "${PYTHON}" -m flake8 src/ automated_scripts/ tools/ tests/
     step "Type check"
     "${PYTHON}" -m mypy src/ || true
     step "Offline test suite"

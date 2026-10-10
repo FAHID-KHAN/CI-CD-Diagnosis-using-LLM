@@ -53,6 +53,9 @@ BOT_MARKERS = (
     "scorecard",
     "codeql",
     "pre-commit.ci",
+    "dependency submission",
+    "dependency-submission",
+    "code scanning",
 )
 
 

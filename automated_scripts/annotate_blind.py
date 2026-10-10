@@ -358,6 +358,15 @@ def run_verify(logs: list[dict], root: Path, output_path: Path, payload: dict, v
             return 0
 
         agreed = error_type == record.get("actual_error_type")
+
+        # Snapshot the first reviewer's independent labels before adjudication can
+        # overwrite them. Both independent label sets must survive: a consensus
+        # label replacing one of them would make chance-corrected agreement
+        # (Cohen's kappa) impossible to compute afterwards.
+        record.setdefault("annotator_error_type", record.get("actual_error_type"))
+        record.setdefault("annotator_root_cause", record.get("actual_root_cause"))
+        record.setdefault("annotator_failure_lines", list(record.get("failure_lines", [])))
+
         print("\n  First reviewer recorded:")
         print(f"    category   : {record.get('actual_error_type')}")
         print(f"    root cause : {record.get('actual_root_cause')}")

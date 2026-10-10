@@ -113,6 +113,7 @@ baseline**, and **root-cause / suggested-fix quality scoring**.
 | Path | What |
 | --- | --- |
 | `docs/thesis/ACTION_ITEMS.md` | What to do next, in order |
+| `docs/thesis/SUPERVISOR_CONDITIONS.md` | Supervisor conditions and the response to each |
 | `docs/thesis/EVALUATION_PLAN.md` | The plan to send to supervisors |
 | `docs/architecture/CONTROLLED_STUDY_RUNBOOK.md` | Exact operating procedure |
 | `docs/architecture/architecture.png` | The system in one picture |
