@@ -202,6 +202,11 @@ docs/
   archive/                           Superseded, kept as history only
 ```
 
+## Running it
+
+Every command, in the order you would use them, is in
+[docs/architecture/RUNNING.md](docs/architecture/RUNNING.md).
+
 ## Housekeeping
 
 ```bash

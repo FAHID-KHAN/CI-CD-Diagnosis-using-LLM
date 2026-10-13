@@ -38,33 +38,10 @@ from dotenv import load_dotenv
 load_dotenv(ROOT / ".env")
 
 from src.api.filtering import LogFilter, _count_tokens
+from src.evaluation.job_scope import is_bot_run  # noqa: F401  (re-exported)
 from src.data_collection.data_collection import GitHubActionsCollector
 
 MAX_FILTER_TOKENS = 12000
-
-# Dependency bots and scheduled scanners produce short, near-identical logs.
-# They flatter a median while contributing nothing a diagnosis study can use:
-# triage deduplicates them, and they exercise none of the failure taxonomy. They
-# are counted separately so a repository is judged on its real CI failures.
-BOT_MARKERS = (
-    "dependabot",
-    "renovate",
-    " - update #",
-    "scorecard",
-    "codeql",
-    "pre-commit.ci",
-    "dependency submission",
-    "dependency-submission",
-    "code scanning",
-)
-
-
-def is_bot_run(run: dict) -> bool:
-    name = (run.get("name") or "").lower()
-    actor = ((run.get("triggering_actor") or {}).get("login") or "").lower()
-    if any(marker in name for marker in BOT_MARKERS):
-        return True
-    return "dependabot" in actor or "renovate" in actor
 
 
 def parse_args():

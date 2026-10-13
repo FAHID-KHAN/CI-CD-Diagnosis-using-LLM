@@ -73,6 +73,7 @@ class GitHubActionsCollector:
             content = self.download_log(owner, repo, run["id"])
             if content is None:
                 continue
+            job_details = self.get_failing_job(owner, repo, run["id"])
             collected.append(
                 {
                     "log_id": f"gh_{owner}_{repo}_{run['id']}",
@@ -92,10 +93,44 @@ class GitHubActionsCollector:
                     "run_started_at": run.get("run_started_at", ""),
                     "updated_at": run.get("updated_at", ""),
                     "url": run.get("html_url", ""),
+                    **job_details,
                 }
             )
             time.sleep(1)
         return collected
+
+    def get_failing_job(self, owner: str, repo: str, run_id: int) -> Dict:
+        """Return the failing job and step for a run, recorded at collection time.
+
+        Triage decides whether a failure is in scope from the failing job, but
+        triage runs offline on stored cases. Capturing this during collection
+        keeps triage deterministic and re-runnable without further API calls,
+        and preserves the information after GitHub expires the run.
+        """
+        url = f"{self.base_url}/repos/{owner}/{repo}/actions/runs/{run_id}/jobs"
+        try:
+            response = _request_with_retry("GET", url, headers=self.headers, params={"per_page": 50}, timeout=30)
+        except requests.RequestException as exc:
+            logger.warning("Could not read jobs for %s/%s run %d: %s", owner, repo, run_id, exc)
+            return {"failing_job": "", "failing_step": "", "job_count": None}
+        if response.status_code != 200:
+            return {"failing_job": "", "failing_step": "", "job_count": None}
+
+        jobs = response.json().get("jobs", []) or []
+        for job in jobs:
+            if job.get("conclusion") != "failure":
+                continue
+            for step in job.get("steps", []) or []:
+                if step.get("conclusion") == "failure":
+                    return {
+                        "failing_job": job.get("name", ""),
+                        "failing_step": step.get("name", ""),
+                        "job_count": len(jobs),
+                    }
+            return {"failing_job": job.get("name", ""), "failing_step": "", "job_count": len(jobs)}
+        # A run can fail with no job at all -- a workflow-level or startup
+        # failure, which produces no log and nothing to diagnose.
+        return {"failing_job": "", "failing_step": "", "job_count": len(jobs)}
 
     def get_workflow_runs(self, owner: str, repo: str, max_runs: int) -> List[Dict]:
         url = f"{self.base_url}/repos/{owner}/{repo}/actions/runs"

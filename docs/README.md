@@ -9,7 +9,7 @@ Three folders. Only the first two describe the current system.
 | [architecture.png](architecture/architecture.png) | The system in one picture: the artifact, and the evaluation apparatus around it |
 | [make_architecture.py](architecture/make_architecture.py) | Source for that picture. Edit it and run `make architecture` |
 | [CONTROLLED_STUDY_RUNBOOK.md](architecture/CONTROLLED_STUDY_RUNBOOK.md) | The exact operating procedure, phase by phase, with every gate |
-| [RUNNING.md](architecture/RUNNING.md) | Short entry point if you just want to run something |
+| [RUNNING.md](architecture/RUNNING.md) | **Every command, in order.** Start here to run anything |
 
 ## `thesis/` — the research work
 

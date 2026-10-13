@@ -1,4 +1,4 @@
-.PHONY: help install test local-model preflight collect triage smoke-cohort annotate annotate-smoke pilot final compare compare-pilot verify verify-smoke audit-ground-truth architecture status
+.PHONY: help install test local-model preflight collect triage smoke-cohort annotate annotate-smoke pilot final compare compare-pilot verify verify-smoke audit-ground-truth architecture status split
 
 STUDY_CONFIG := configs/thesis_fresh_2026.yaml
 STUDY_ROOT := data/studies/thesis_fresh_2026
@@ -16,6 +16,7 @@ help:
 	@echo "  make collect             Collect the fixed fresh dataset"
 	@echo "  make triage              Apply fixed eligibility rules"
 	@echo "  make smoke-cohort        Create the five-case engineering cohort"
+	@echo "  make split               Create the grouped dataset split"
 	@echo "  make annotate ANNOTATOR=id  Blindly annotate eligible logs"
 	@echo "  make annotate-smoke ANNOTATOR=id  Annotate the smoke cohort"
 	@echo "  make verify VERIFIER=id   Independent second review and adjudication"
@@ -119,3 +120,7 @@ architecture:
 # reading; './run_workflow.sh final' is where the non-zero exit gates the run.
 status:
 	@python automated_scripts/study_status.py --study-config $(STUDY_CONFIG) || true
+
+# Families move together, repositories stay represented, seed is fixed.
+split:
+	python automated_scripts/make_split.py --study-config $(STUDY_CONFIG)

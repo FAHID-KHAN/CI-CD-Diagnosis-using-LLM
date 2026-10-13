@@ -132,7 +132,7 @@ def build() -> str:
     parts.append(parts_row)
 
     # The two conditions branch from the shared prompt and rejoin unchanged.
-    branch_x = positions[-1] + BOX_W + GAP_X
+    branch_x = positions[-1] + BOX_W + GAP_X  # the two conditions, plus a baseline to come
     model_h = 72
     spread = 62
     centre = y + BOX_H / 2
@@ -175,11 +175,11 @@ def build() -> str:
     )
     y += 54
     collection = [
-        ("GitHub Actions API", ["failed runs only"], "source"),
+        ("GitHub Actions API", ["failed runs +", "the failing job"], "source"),
         ("Collect", ["fixed repository list,", "no auto-discovery"], "process"),
         ("Immutable raw logs", ["+ SHA-256 per log"], "data"),
-        ("Triage", ["cancelled · auth · too short", "· duplicate signature"], "process"),
-        ("Eligible cohort", ["the frozen study set"], "data"),
+        ("Triage", ["scope · duplicates ·", "causal failure families"], "process"),
+        ("Eligible cohort", ["one case per family"], "data"),
     ]
     parts_row, collect_positions = row(left, y, collection)
     parts.append(parts_row)
@@ -188,13 +188,15 @@ def build() -> str:
     drop_y = y + BOX_H
     parts.append(f'<path d="M {drop_x} {drop_y + 6} V {drop_y + GAP_Y - 8}" stroke="{ARROW}" '
                  f'stroke-width="2.2" fill="none" marker-end="url(#tip)"/>')
-    parts.append(box(drop_x - BOX_W / 2, drop_y + GAP_Y, "Excluded cases", ["with a recorded reason"], "data", h=72))
+    parts.append(
+        box(drop_x - BOX_W / 2, drop_y + GAP_Y, "Excluded cases", ["every reason counted"], "data", h=72)
+    )
 
     y2 = drop_y + GAP_Y + 72 + GAP_Y
     ground_truth = [
-        ("Blind annotation", ["category · root cause · lines", "· linked evidence"], "source"),
-        ("Independent review", ["a different reviewer,", "blind to the first"], "source"),
-        ("Adjudicated ground truth", ["written decision on", "every disagreement"], "data"),
+        ("Grouped split", ["development · pilot · held-out", "families never separated"], "gate"),
+        ("Blind annotation", ["category · root cause · lines", "· evidence source"], "source"),
+        ("Independent review", ["optional; both label sets", "preserved for agreement"], "source"),
         ("Audit gate", ["evidence, independence,", "usable root cause"], "gate"),
     ]
     parts_row, gt_positions = row(left + BOX_W + GAP_X, y2, ground_truth)
@@ -218,9 +220,9 @@ def build() -> str:
     )
     y3 += 54
     measurement = [
-        ("Partition guard", ["refuses a held-out run over", "any exploratory case"], "gate"),
-        ("Scoring", ["exact category match;", "per-category P/R/F1; lines"], "process"),
-        ("Paired statistics", ["McNemar · permutation", "· bootstrap CI"], "process"),
+        ("Freeze + partition guard", ["refuses a held-out run over", "any case already seen"], "gate"),
+        ("Scoring", ["category P/R/F1 · macro F1", "· evidence lines · rubric"], "process"),
+        ("Paired analysis", ["effect sizes · bootstrap CI;", "formal tests only if justified"], "process"),
         ("Comparison report", ["terminal table +", "self-contained HTML page"], "output"),
     ]
     parts_row, _ = row(left, y3, measurement)
@@ -242,8 +244,8 @@ def build() -> str:
 
     parts.append(
         f'<text x="{left}" y="{legend_y + 38}" font-size="13.5" fill="{MUTED}">'
-        "Out of scope in the current system: rule-based or heuristic baselines, RAG comparison, "
-        "human-versus-LLM study, and root-cause rubric scoring.</text>"
+        "Controlled defects and the keyword baseline are separate conditions, reported apart from "
+        "naturally occurring failures.</text>"
     )
 
     height = int(legend_y + 76)

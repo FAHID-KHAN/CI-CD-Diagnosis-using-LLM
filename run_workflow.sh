@@ -24,6 +24,9 @@ FROM_STEP=1
 STUDY_DIR=""
 ANNOTATOR=""
 VERIFIER=""
+SCORER=""
+ACTION=""
+EXPERIMENT=""
 COMMAND=""
 
 usage() {
@@ -35,12 +38,16 @@ Commands:
   check             Offline verification: lint, type check and the full test suite
   cohort            Prepare the thesis cohort: setup, preflight, collect, triage (default)
   smoke             Create the reproducible five-case engineering cohort
+  split             Allocate the cohort into development, pilot and held-out sets
   annotate          Blind annotation of the thesis cohort        (needs ANNOTATOR=)
   annotate-smoke    Blind annotation of the smoke cohort         (needs ANNOTATOR=)
   recheck           Revisit only the cases the audit flags       (needs ANNOTATOR=)
   verify            Independent second review of the thesis cohort (needs VERIFIER=)
   verify-smoke      Independent second review of the smoke cohort  (needs VERIFIER=)
   audit             Ground-truth audit against the evidence requirements
+  defects           Record or audit controlled defects          (add|audit|commit)
+  score             Blind 0/1/2 scoring of model root causes    (needs SCORER=)
+  freeze            Create or verify the freeze record          (create|verify)
   pilot             Paired five-case engineering run on the smoke cohort
   compare           Terminal comparison plus the self-contained HTML page
   engineering       smoke -> pilot -> compare, stopping at any human step
@@ -55,6 +62,9 @@ Options:
   --study-config PATH     Use another versioned study protocol
   --study-dir PATH        Inspect or operate on another study directory
   ANNOTATOR=id            Reviewer identifier for annotate commands
+  SCORER=id               Scorer identifier for the score command
+  ACTION=word             Sub-action for defects (add|audit|commit) and freeze (create|verify)
+  EXPERIMENT=dir          Experiment directory for the score command
   VERIFIER=id             Second-reviewer identifier for verify commands
 
 Examples:
@@ -77,6 +87,9 @@ while [[ $# -gt 0 ]]; do
         --study-config) STUDY_CONFIG="$2"; shift 2 ;;
         --study-dir) STUDY_DIR="$2"; shift 2 ;;
         ANNOTATOR=*) ANNOTATOR="${1#ANNOTATOR=}"; shift ;;
+        SCORER=*) SCORER="${1#SCORER=}"; shift ;;
+        ACTION=*) ACTION="${1#ACTION=}"; shift ;;
+        EXPERIMENT=*) EXPERIMENT="${1#EXPERIMENT=}"; shift ;;
         VERIFIER=*) VERIFIER="${1#VERIFIER=}"; shift ;;
         --help|-h) usage; exit 0 ;;
         -*) echo "Unknown option: $1"; usage; exit 1 ;;
@@ -156,6 +169,31 @@ cmd_annotate() {
     "${PYTHON}" automated_scripts/annotate_blind.py "${args[@]}"
 }
 
+cmd_defects() {
+    local action="${ACTION:-audit}"
+    local dir="${STUDY_DIR}"
+    if [[ -z "${dir}" ]]; then
+        dir="$("${PYTHON}" -c "
+import sys; sys.path.insert(0, '.')
+from automated_scripts.study_utils import load_study_config, study_directory
+config, _ = load_study_config('${STUDY_CONFIG}')
+print(study_directory(config))")"
+    fi
+    "${PYTHON}" automated_scripts/controlled_defects.py "${action}" --study-dir "${dir}"
+}
+
+cmd_score() {
+    require_id SCORER "${SCORER}"
+    [[ -n "${EXPERIMENT}" ]] || fail "EXPERIMENT=<dir> is required, e.g. EXPERIMENT=${SMOKE_ROOT}/experiments/pilot_002"
+    "${PYTHON}" automated_scripts/score_root_cause.py --experiment "${EXPERIMENT}" --scorer "${SCORER}"
+}
+
+cmd_freeze() {
+    local args=("${ACTION:-verify}" --study-config "${STUDY_CONFIG}")
+    [[ -n "${STUDY_DIR}" ]] && args+=(--study-dir "${STUDY_DIR}")
+    "${PYTHON}" automated_scripts/freeze_package.py "${args[@]}"
+}
+
 cmd_recheck() {
     require_id ANNOTATOR "${ANNOTATOR}"
     local args=(--study-config "${STUDY_CONFIG}" --mode recheck --annotator "${ANNOTATOR}")
@@ -195,6 +233,10 @@ from automated_scripts.study_utils import load_study_config, study_directory
 config, _ = load_study_config('${STUDY_CONFIG}')
 print(study_directory(config))")"
 
+    step "Freeze verification"
+    "${PYTHON}" automated_scripts/freeze_package.py verify --study-config "${STUDY_CONFIG}" \
+        || fail "The system no longer matches its freeze record. Investigate before running."
+
     step "Final paired experiment"
     "${PYTHON}" automated_scripts/benchmark_models.py \
         --input "${study_root}/triaged/eligible_logs.json" \
@@ -229,12 +271,16 @@ case "${COMMAND}" in
     check)          cmd_check ;;
     cohort)         cmd_cohort ;;
     smoke)          "${PYTHON}" automated_scripts/create_smoke_cohort.py ;;
+    split)          "${PYTHON}" automated_scripts/make_split.py --study-config "${STUDY_CONFIG}" ;;
     annotate)       cmd_annotate "" ;;
     annotate-smoke) cmd_annotate "${SMOKE_ROOT}" ;;
     recheck)        cmd_recheck ;;
     verify)         cmd_verify "" ;;
     verify-smoke)   cmd_verify "${SMOKE_ROOT}" ;;
     audit)          "${PYTHON}" automated_scripts/compare_reports.py --audit-only ;;
+    defects)        cmd_defects ;;
+    score)          cmd_score ;;
+    freeze)         cmd_freeze ;;
     pilot)          cmd_pilot ;;
     compare)        "${PYTHON}" automated_scripts/compare_reports.py ;;
     engineering)    cmd_engineering ;;

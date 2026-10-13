@@ -39,90 +39,13 @@ from dotenv import load_dotenv
 
 load_dotenv(ROOT / ".env")
 
-from src.data_collection.data_collection import GitHubActionsCollector
+from automated_scripts.triage import compute_error_signature
+from src.data_collection.data_collection import GitHubActionsCollector as _Collector
+from src.evaluation.failure_families import compare_rules, family_report
+from src.evaluation.job_scope import IN_SCOPE, classify_job
 from tools.scout_repositories import is_bot_run
 
 API = "https://api.github.com"
-
-# Job classification. Excluded patterns are tested first, because a job named
-# "Build docs" is a documentation job, not a build job. Matching is on the job
-# name and the name of the step that actually failed — the runs API does not
-# expose the underlying shell command, so these names are a proxy and the
-# printed breakdown is meant to be spot-checked.
-EXCLUDED_PATTERNS = (
-    ("docs", ("doc", "javadoc", "sphinx", "mkdocs", "readme", "changelog")),
-    (
-        "lint_format",
-        (
-            "lint",
-            "flake8",
-            "eslint",
-            "prettier",
-            "format",
-            "style",
-            "checkstyle",
-            "ruff",
-            "black",
-            "isort",
-            "spotless",
-            "clippy",
-        ),
-    ),
-    ("spell", ("spell", "codespell", "typo")),
-    (
-        "admin_other",
-        (
-            "commit message",
-            "commit prefix",
-            "conventional commit",
-            "pr title",
-            "label",
-            "stale",
-            "triage",
-            "codeql",
-            "scorecard",
-            "license",
-            "contributor",
-            "welcome",
-            "greet",
-        ),
-    ),
-)
-
-IN_SCOPE_PATTERNS = (
-    "build",
-    "compile",
-    "assemble",
-    "package",
-    "gradle",
-    "maven",
-    "mvn",
-    "make",
-    "test",
-    "pytest",
-    "junit",
-    "jest",
-    "spec",
-    "unittest",
-    "integration",
-    "e2e",
-    "install",
-    "dependenc",
-    "resolve",
-    "npm ci",
-    "pip install",
-    "bundle",
-    "setup",
-    "environment",
-    "docker",
-    "container",
-    "provision",
-    "sanity",
-    "check",
-)
-
-IN_SCOPE = "build_test"
-UNKNOWN = "unclassified"
 
 # A repair should be a small, targeted follow-up. A branch that moved by dozens
 # of commits before passing is not evidence of what fixed this failure.
@@ -133,17 +56,6 @@ MAX_REPAIR_COMMITS = 10
 # window are therefore dropped explicitly rather than trusted to be recent, and
 # the inspected date range is printed so a stale page is visible.
 DEFAULT_MAX_AGE_DAYS = 80
-
-
-def classify(job_name: str, step_name: str) -> str:
-    """Bucket a failed job from its name and the name of the step that failed."""
-    text = f"{job_name} {step_name}".lower()
-    for bucket, patterns in EXCLUDED_PATTERNS:
-        if any(pattern in text for pattern in patterns):
-            return bucket
-    if any(pattern in text for pattern in IN_SCOPE_PATTERNS):
-        return IN_SCOPE
-    return UNKNOWN
 
 
 def api_get(session: requests.Session, url: str, **params):
@@ -225,7 +137,7 @@ def inspect(owner: str, repo: str, inspect_count: int, token: str, max_age_days:
     session = requests.Session()
     session.headers.update({"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"})
 
-    collector = GitHubActionsCollector(token)
+    collector = _Collector(token)
     runs = collector.get_workflow_runs(owner, repo, 100)
     real_runs = [run for run in runs if not is_bot_run(run)]
 
@@ -257,14 +169,24 @@ def inspect(owner: str, repo: str, inspect_count: int, token: str, max_age_days:
             continue
         repair = find_repair(session, owner, repo, run)
         linked = bool(repair and repair.get("commits") is not None and repair["commits"] <= MAX_REPAIR_COMMITS)
+
+        # Families need the normalised error signature and, where a repair was
+        # found, the revision that fixed it. Both are derived here so the
+        # assessment can report what distinct problems a history supplies.
+        content = collector.download_log(owner, repo, run["id"])
+        signature = compute_error_signature(content) if content else None
         cases.append(
             {
+                "log_id": f"gh_{owner}_{repo}_{run['id']}",
+                "repository": f"{owner}/{repo}",
+                "error_signature": signature,
+                "fixing_revision": (repair or {}).get("passing_run_id") if linked else None,
                 "run_id": run["id"],
                 "workflow": run.get("name", ""),
                 "branch": run.get("head_branch", ""),
                 "job": job_name,
                 "failing_step": step_name,
-                "classification": classify(job_name, step_name),
+                "classification": classify_job(job_name, step_name),
                 "log_available": log_available(session, owner, repo, run["id"]),
                 "repair": repair,
                 "repair_linked": linked,
@@ -317,10 +239,17 @@ def evaluate(result: dict, min_logs: int, min_repairs: int) -> dict:
         ),
     ]
     result["criteria"] = [
-        {"criterion": name, "value": value, "passed": passed, "requirement": need}
+        {"criterion": name, "value": value, "reference": passed, "requirement": need}
         for name, value, passed, need in criteria
     ]
-    result["passed"] = all(passed for _, _, passed, _ in criteria)
+    # Reported, never decided here: the evaluation plan asks for a reasoned
+    # selection rather than an automatic pass or fail on one numerical
+    # threshold, so the reference thresholds are shown as context only.
+    result["references_met"] = sum(1 for _, _, passed, _ in criteria if passed)
+    result["family_rules"] = compare_rules(cases) if cases else []
+    result["families"] = (
+        {key: value for key, value in family_report(cases).items() if key != "families_detail"} if cases else {}
+    )
     result["classification_counts"] = dict(collections.Counter(case["classification"] for case in cases))
     return result
 
@@ -342,11 +271,24 @@ def report(result: dict) -> None:
     print(f"  candidate pool after filtering: {result.get('candidates_available', 0)} runs")
     print()
     for item in result["criteria"]:
-        mark = "PASS" if item["passed"] else "FAIL"
-        print(f"  {item['criterion']:<52}{item['value']:>14}  {mark}  ({item['requirement']})")
+        mark = "  " if item["reference"] else "<-"
+        print(f"  {item['criterion']:<52}{item['value']:>14}  {mark} ({item['requirement']})")
     print()
-    print(f"  VERDICT: {'PASS — repository is usable' if result['passed'] else 'FAIL — replace this repository'}")
+    print(
+        f"  {result['references_met']} of {len(result['criteria'])} reference thresholds met. "
+        "'<-' marks one not met."
+    )
+    print("  These are evidence for a reasoned decision, not an automatic verdict.")
     print()
+    if result.get("family_rules"):
+        print("  Distinct failure families under each grouping rule:")
+        print(f"    {'rule':<12}{'families':>10}{'singletons':>12}{'duplicates':>12}{'largest':>9}")
+        for summary in result["family_rules"]:
+            print(
+                f"    {summary['rule']:<12}{summary['families']:>10}{summary['singletons']:>12}"
+                f"{summary['duplicate_cases']:>12}{summary['largest_family']:>9}"
+            )
+        print()
     print("  Job types among the inspected failures:")
     for name, count in sorted(result["classification_counts"].items(), key=lambda kv: -kv[1]):
         print(f"    {name:<16}{count:>4}")
@@ -392,8 +334,8 @@ def main() -> int:
         result = evaluate(inspect(owner, repo, args.inspect, token, args.max_age_days), args.min_logs, args.min_repairs)
         report(result)
         results.append(result)
-        if args.stop_on_fail and not result["passed"]:
-            print("  Stopping: this repository must be replaced before the next check.\n")
+        if args.stop_on_fail and result["references_met"] < len(result["criteria"]):
+            print("  Stopping here: review this evidence before assessing the next repository.\n")
             break
 
     if args.output:
@@ -411,7 +353,7 @@ def main() -> int:
         Path(args.output).parent.mkdir(parents=True, exist_ok=True)
         Path(args.output).write_text(json.dumps(payload, indent=2), encoding="utf-8")
         print(f"  Record written to {args.output}")
-    return 0 if all(item["passed"] for item in results) else 1
+    return 0
 
 
 if __name__ == "__main__":

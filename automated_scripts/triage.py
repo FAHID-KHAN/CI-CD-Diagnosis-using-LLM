@@ -23,6 +23,8 @@ from automated_scripts.study_utils import (
     utc_now,
 )
 from src.evaluation.case_partitions import load_exclusions
+from src.evaluation.failure_families import assign_families, family_report
+from src.evaluation.job_scope import classify_job, is_bot_run, is_excluded
 
 SKIP_PATTERNS = [
     r"The operation was canceled",
@@ -70,7 +72,15 @@ def triage_logs(
     min_lines: int = 20,
     max_duplicates: int = 2,
     exploratory: dict | None = None,
+    family_rule: str = "combined",
 ) -> tuple[list, list]:
+    """Apply the eligibility rules and return (eligible, excluded).
+
+    Order matters. Cheap structural rules run first so a case is reported under
+    the most specific reason that applies; the family rule runs last, over the
+    survivors, because grouping only means something once out-of-scope and
+    unusable cases have gone.
+    """
     kept = []
     excluded = []
     signature_counts = defaultdict(int)
@@ -84,9 +94,7 @@ def triage_logs(
         # exclusion, and avoids spending annotation effort on an unusable case.
         used_by = exploratory.get(log.get("log_id"))
         if used_by is not None:
-            excluded.append(
-                exclusion_record(log, "used_in_exploratory_cohort", exploratory_cohort=used_by.cohort_id)
-            )
+            excluded.append(exclusion_record(log, "used_in_exploratory_cohort", exploratory_cohort=used_by.cohort_id))
             continue
         if any(re.search(pattern, content, re.IGNORECASE) for pattern in SKIP_PATTERNS):
             excluded.append(exclusion_record(log, "cancelled_run"))
@@ -98,6 +106,31 @@ def triage_logs(
             excluded.append(exclusion_record(log, "too_short"))
             continue
 
+        # The study scope covers build, test, dependency, configuration and
+        # environment failures. Lint-only, documentation-only and
+        # administrative jobs are excluded because neither the taxonomy nor the
+        # prototype claims to diagnose them.
+        failing_job = log.get("failing_job", "")
+        failing_step = log.get("failing_step", "")
+        # Automation, not a CI fault: dependency bots and scheduled scanners.
+        if is_bot_run(log):
+            excluded.append(exclusion_record(log, "bot_generated_run"))
+            continue
+        if log.get("job_count") == 0:
+            excluded.append(exclusion_record(log, "no_job_executed"))
+            continue
+        if is_excluded(failing_job, failing_step):
+            excluded.append(
+                exclusion_record(
+                    log,
+                    "out_of_scope_job",
+                    job_scope=classify_job(failing_job, failing_step),
+                    failing_job=failing_job,
+                    failing_step=failing_step,
+                )
+            )
+            continue
+
         signature = compute_error_signature(content)
         key = f"{log.get('repository', '')}:{signature}"
         signature_counts[key] += 1
@@ -107,8 +140,24 @@ def triage_logs(
 
         derived = dict(log)
         derived["error_signature"] = signature
+        derived["job_scope"] = classify_job(failing_job, failing_step)
         kept.append(derived)
-    return kept, excluded
+
+    # One case per causal failure family. Grouping runs over the survivors so
+    # that an out-of-scope case can never be the member kept to represent a
+    # family that also contains an eligible one.
+    assignment = assign_families(kept, family_rule)
+    seen_families: set[str] = set()
+    deduplicated = []
+    for case in kept:
+        family_id = assignment.get(case["log_id"], case["log_id"])
+        case["family_id"] = family_id
+        if family_id in seen_families:
+            excluded.append(exclusion_record(case, "duplicate_failure_family", family_id=family_id))
+            continue
+        seen_families.add(family_id)
+        deduplicated.append(case)
+    return deduplicated, excluded
 
 
 def parse_args():
@@ -147,7 +196,8 @@ def main() -> int:
     exploratory, manifest_problems = load_exclusions(str(root.parent), str(eligible_path))
     for problem in manifest_problems:
         print(f"WARNING: {problem}")
-    eligible, excluded = triage_logs(logs, min_lines, max_duplicates, exploratory)
+    family_rule = str(rules.get("family_rule", "combined"))
+    eligible, excluded = triage_logs(logs, min_lines, max_duplicates, exploratory, family_rule)
     atomic_write_json(eligible_path, eligible)
     atomic_write_json(excluded_path, excluded)
 
@@ -166,6 +216,10 @@ def main() -> int:
             "minimum_log_lines": min_lines,
             "maximum_duplicate_error_signatures_per_repository": max_duplicates,
             "exploratory_cases_known": len(exploratory),
+            "family_rule": family_rule,
+        },
+        "families": {
+            key: value for key, value in family_report(eligible, family_rule).items() if key != "families_detail"
         },
         "input": {"file": str(raw_path), "sha256": sha256_file(raw_path), "count": len(logs)},
         "eligible": {"file": str(eligible_path), "sha256": sha256_file(eligible_path), "count": len(eligible)},
@@ -179,6 +233,9 @@ def main() -> int:
     }
     atomic_write_json(manifest_path, manifest)
     print(f"Triage complete: {len(eligible)} eligible, {len(excluded)} excluded")
+    for reason, count in sorted(reason_counts.items(), key=lambda item: -item[1]):
+        print(f"  excluded {count:>4}  {reason}")
+    print(f"  family rule: {family_rule}; every eligible case represents a distinct family")
     if not target_met:
         print(f"ERROR: Eligible cohort size {len(eligible)} is outside the fixed range {minimum}-{maximum}.")
         return 1

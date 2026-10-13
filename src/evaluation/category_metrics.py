@@ -16,6 +16,7 @@ Everything is computed from stored results, so no frozen artifact changes.
 
 from __future__ import annotations
 
+import re
 from typing import Dict, Iterable, List, Optional, Sequence
 
 from src.evaluation.taxonomy import INFERENCE_ERROR
@@ -66,14 +67,70 @@ def macro_f1(scores: Dict[str, dict]) -> Optional[float]:
     return round(sum(supported) / len(supported), 4) if supported else None
 
 
-def evidence_line_scores(predicted: Sequence[int], actual: Sequence[int]) -> dict:
+def surviving_lines(filtered_log: str) -> set:
+    """Original line numbers that survived filtering into the model's input.
+
+    ``LogFilter`` prefixes every retained line with ``[Line N]``, where N is its
+    position in the original log, so the set of numbers that reach the model can
+    be recovered exactly.
+    """
+    return {int(match.group(1)) for match in re.finditer(r"\[Line (\d+)\]", filtered_log or "")}
+
+
+def preprocessing_recall(verified_lines: Sequence[int], filtered_log: str) -> dict:
+    """Share of verified evidence lines that survived into the model's input.
+
+    Evidence is marked on the full log, but the model only ever sees the
+    filtered extract. This separates two different failures that otherwise look
+    identical in the results: evidence the filter discarded before inference,
+    and evidence that was available but the model did not select. Without it, a
+    model is penalised for lines it was never shown.
+    """
+    verified = set(verified_lines or [])
+    if not verified:
+        return {"scorable": False, "verified_lines": 0, "surviving_lines": None, "recall": None}
+    survived = verified & surviving_lines(filtered_log)
+    return {
+        "scorable": True,
+        "verified_lines": len(verified),
+        "surviving_lines": len(survived),
+        "lost_lines": sorted(verified - survived),
+        "recall": round(len(survived) / len(verified), 4),
+    }
+
+
+def aggregate_preprocessing_recall(per_case: Sequence[dict]) -> dict:
+    """Mean preprocessing recall, and how often the filter lost everything."""
+    scorable = [case for case in per_case if case.get("scorable")]
+    if not scorable:
+        return {"scorable_cases": 0, "mean_recall": None, "cases_with_no_evidence_surviving": 0}
+    return {
+        "scorable_cases": len(scorable),
+        "mean_recall": round(sum(case["recall"] for case in scorable) / len(scorable), 4),
+        "cases_with_no_evidence_surviving": sum(1 for case in scorable if case["surviving_lines"] == 0),
+        "cases_fully_preserved": sum(1 for case in scorable if case["recall"] == 1.0),
+    }
+
+
+def evidence_line_scores(
+    predicted: Sequence[int],
+    actual: Sequence[int],
+    filtered_log: Optional[str] = None,
+) -> dict:
     """Precision, recall, F1 and Jaccard overlap for one case's supporting lines.
 
-    A case whose ground truth records no lines is reported as unscorable rather
-    than as a zero, so missing annotation never reads as a model failure.
+    When ``filtered_log`` is given, the comparison uses only the verified lines
+    that survived filtering; evidence the model never received is handled by
+    ``preprocessing_recall`` instead. A case with no scorable lines is reported
+    as unscorable rather than as a zero, so missing annotation or an aggressive
+    filter never reads as a model failure.
     """
     truth = set(actual or [])
     guess = set(predicted or [])
+    # Scored against the verified lines that survived filtering, so the model is
+    # measured on what it could actually have selected.
+    if filtered_log is not None:
+        truth &= surviving_lines(filtered_log)
     if not truth:
         return {"scorable": False, "precision": None, "recall": None, "f1": None, "jaccard": None}
     hits = len(truth & guess)

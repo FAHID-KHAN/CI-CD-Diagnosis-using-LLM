@@ -17,28 +17,43 @@
 # model performance. Confirm the pair against the historical failure-to-fix
 # feasibility check before freezing it.
 #
-# Target arithmetic, from the observed yield of the six-repository run:
-#   raw      = 2 repositories x 15 = 30
-#   eligible = django 9/15 and gradle 15/15 were eligible there, so expect ~24.
-#   The eligible range below allows a worse yield than observed without
-#   accepting a collection that has silently gone wrong.
+# Target arithmetic, derived from the repository assessment of 28 September and
+# 10 October 2026 (30 runs inspected per repository, recorded under
+# tools/check_repository_gate.py):
+#
+#   gradle/gradle   30 inspected -> 14 in scope -> 11 distinct failure families
+#   django/django   30 inspected -> 15 in scope ->  3 distinct failure families
+#
+# A combined yield of roughly 0.23 usable cases per inspected run. GitHub's
+# workflow-runs listing returns at most 100 entries per request, so one
+# collection pass over two repositories can inspect at most 200 runs and should
+# be expected to produce in the region of 45 usable cases.
+#
+# That is enough for the 15 development and 15 pilot cases with margin, and not
+# enough for the 50 held-out cases in a single pass. Held-out collection is
+# therefore expected to need a second pass over a later window, which is
+# consistent with the plan treating 120 as a target rather than a quota.
+#
+# The eligible range below is deliberately wide: a count far above or below it
+# means the yield assumption no longer holds and should be re-examined rather
+# than absorbed silently.
 study_id: thesis_pair_2026
 title: Two-repository contrasting GitHub Actions failure dataset (Python and JVM)
 source: github_actions
 unit_of_analysis: failed_workflow_run
 sampling_method: latest_failed_runs_per_repository
 auto_discovery: false
-target_raw_logs: 30
+target_raw_logs: 200
 target_eligible_logs:
-  minimum: 16
-  maximum: 30
+  minimum: 25
+  maximum: 200
 
 repositories:
   - name: django/django
-    max_logs: 15
+    max_logs: 100
     ecosystem: python
   - name: gradle/gradle
-    max_logs: 15
+    max_logs: 100
     ecosystem: jvm
 
 eligibility:
