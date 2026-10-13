@@ -796,6 +796,20 @@ def test_every_case_is_allocated_exactly_once():
     assert len(allocated) == len(set(allocated)), "a case was allocated twice"
 
 
+def test_a_short_cohort_starves_held_out_not_the_working_sets():
+    """Development and pilot are needed now; held-out can grow with a later pass."""
+    from automated_scripts.make_split import allocate, summarise
+
+    # 40 cases against targets totalling 80, so half the cohort is missing.
+    cases = [_split_case(f"c{i}", "org/one", f"sig{i}") for i in range(40)]
+    targets = {"development": 15, "pilot": 15, "held_out": 50}
+    rows = {row["partition"]: row for row in summarise(allocate(cases, targets, "signature", seed=5), cases, targets)}
+
+    assert rows["development"]["shortfall"] == 0
+    assert rows["pilot"]["shortfall"] == 0
+    assert rows["held_out"]["shortfall"] > 0, "the shortfall must land on held-out"
+
+
 def test_a_shortfall_is_reported_rather_than_hidden():
     """Too few cases must surface, not be papered over by under-filling quietly."""
     from automated_scripts.make_split import allocate, summarise

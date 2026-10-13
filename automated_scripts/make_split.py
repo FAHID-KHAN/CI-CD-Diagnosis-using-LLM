@@ -44,10 +44,15 @@ DEFAULT_TARGETS = {"development": 15, "pilot": 15, "held_out": 50}
 def allocate(cases: List[dict], targets: Dict[str, int], rule: str, seed: int) -> Dict[str, List[str]]:
     """Assign whole families to partitions, keeping repositories proportional.
 
-    Within a repository, families are shuffled with the seed and then handed to
-    whichever partition is furthest below its share of that repository. Greedy
-    allocation by deficit keeps the proportions close without needing the family
-    sizes to divide evenly, which they never do.
+    Partitions are filled in priority order -- development, then pilot, then
+    held-out -- each to its proportional share of the repository. When a cohort
+    is short of the overall target, that shortfall should land on the held-out
+    set rather than on the two small sets needed to start work: development and
+    pilot are fixed in size and used immediately, while the held-out set can
+    grow with a later collection pass.
+
+    Within a repository, families are shuffled with the seed so the allocation
+    is reproducible but not ordered by collection sequence.
     """
     families = build_families(cases, rule)
     by_case = {case["log_id"]: case for case in cases if case.get("log_id")}
@@ -70,10 +75,13 @@ def allocate(cases: List[dict], targets: Dict[str, int], rule: str, seed: int) -
 
         random.Random(f"{seed}:{repository}").shuffle(group)
         for family in group:
-            deficits = {name: quota[name] - filled[name] for name in PARTITIONS}
-            # Ties resolve in the declared partition order, so the result does
-            # not depend on dictionary iteration order.
-            chosen = max(PARTITIONS, key=lambda name: (deficits[name], -PARTITIONS.index(name)))
+            # First partition, in priority order, that is still below its share.
+            # Everything after the quotas are met falls to the last partition.
+            chosen = PARTITIONS[-1]
+            for name in PARTITIONS:
+                if filled[name] < quota[name]:
+                    chosen = name
+                    break
             allocation[chosen].extend(family.case_ids)
             filled[chosen] += family.size
 

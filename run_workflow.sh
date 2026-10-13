@@ -27,6 +27,9 @@ VERIFIER=""
 SCORER=""
 ACTION=""
 EXPERIMENT=""
+DRY_RUN=false
+OVERWRITE=false
+REASON=""
 COMMAND=""
 
 usage() {
@@ -58,6 +61,8 @@ Options:
   --skip-live-preflight   Run offline checks only
   --resume                Resume an interrupted collection
   --overwrite-triage      Intentionally regenerate derived triage files
+  --dry-run               split only: show the allocation without writing it
+  --overwrite --reason X  split only: replace an existing split, recording why
   --from STEP             cohort only: 1=setup, 2=collection, 3=triage
   --study-config PATH     Use another versioned study protocol
   --study-dir PATH        Inspect or operate on another study directory
@@ -72,6 +77,7 @@ Examples:
   ./run_workflow.sh status --study-dir data/studies/system_smoke_001
   ./run_workflow.sh cohort --skip-install
   ./run_workflow.sh verify-smoke VERIFIER=mahade
+  ./run_workflow.sh split --dry-run
 USAGE
 }
 
@@ -83,6 +89,9 @@ while [[ $# -gt 0 ]]; do
         --skip-live-preflight) SKIP_LIVE_PREFLIGHT=true; shift ;;
         --resume) RESUME=true; shift ;;
         --overwrite-triage) OVERWRITE_TRIAGE=true; shift ;;
+        --dry-run) DRY_RUN=true; shift ;;
+        --overwrite) OVERWRITE=true; shift ;;
+        --reason) REASON="$2"; shift 2 ;;
         --from) FROM_STEP="$2"; shift 2 ;;
         --study-config) STUDY_CONFIG="$2"; shift 2 ;;
         --study-dir) STUDY_DIR="$2"; shift 2 ;;
@@ -167,6 +176,15 @@ cmd_annotate() {
     local args=(--study-config "${STUDY_CONFIG}" --mode annotate --annotator "${ANNOTATOR}")
     [[ -n "$1" ]] && args+=(--study-dir "$1")
     "${PYTHON}" automated_scripts/annotate_blind.py "${args[@]}"
+}
+
+cmd_split() {
+    local args=(--study-config "${STUDY_CONFIG}")
+    [[ -n "${STUDY_DIR}" ]] && args+=(--study-dir "${STUDY_DIR}")
+    [[ "${DRY_RUN}" == true ]] && args+=(--dry-run)
+    [[ "${OVERWRITE}" == true ]] && args+=(--overwrite)
+    [[ -n "${REASON}" ]] && args+=(--reason "${REASON}")
+    "${PYTHON}" automated_scripts/make_split.py "${args[@]}"
 }
 
 cmd_defects() {
@@ -271,7 +289,7 @@ case "${COMMAND}" in
     check)          cmd_check ;;
     cohort)         cmd_cohort ;;
     smoke)          "${PYTHON}" automated_scripts/create_smoke_cohort.py ;;
-    split)          "${PYTHON}" automated_scripts/make_split.py --study-config "${STUDY_CONFIG}" ;;
+    split)          cmd_split ;;
     annotate)       cmd_annotate "" ;;
     annotate-smoke) cmd_annotate "${SMOKE_ROOT}" ;;
     recheck)        cmd_recheck ;;
