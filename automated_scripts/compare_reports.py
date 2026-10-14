@@ -26,6 +26,7 @@ sys.path.insert(0, parent_dir)
 from src.evaluation.comparison_view import fmt_ms, fmt_usd, pct, render_html, type_label
 from src.evaluation.report_comparison import (
     build_comparison,
+    merge_experiments,
     discover_experiments,
     load_experiment,
     pairwise_agreements,
@@ -52,6 +53,11 @@ def parse_args():
     parser.add_argument("--output", help="HTML output path")
     parser.add_argument("--json", dest="json_output", help="Also write the aligned comparison data as JSON")
     parser.add_argument("--list", action="store_true", help="List the experiments that were found and exit")
+    parser.add_argument(
+        "--merge",
+        action="store_true",
+        help="Treat the named experiments as one: separate runs of different conditions over the same cases",
+    )
     parser.add_argument("--no-html", action="store_true", help="Print the terminal comparison only")
     parser.add_argument(
         "--audit-only",
@@ -202,6 +208,15 @@ def main():
         return
 
     reports = [load_experiment(path, args.ground_truth) for path in paths]
+    if args.merge:
+        if len(reports) < 2:
+            print("ERROR: --merge needs at least two --experiment directories.")
+            sys.exit(1)
+        try:
+            reports = [merge_experiments(reports)]
+        except ValueError as exc:
+            print(f"ERROR: {exc}")
+            sys.exit(1)
 
     if args.audit_only:
         for report in reports:

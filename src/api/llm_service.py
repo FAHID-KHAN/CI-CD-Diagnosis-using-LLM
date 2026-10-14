@@ -16,6 +16,21 @@ logger = logging.getLogger(__name__)
 MAX_LLM_RETRIES = 3
 LLM_BACKOFF = 2.0
 
+# A 429 can mean "slow down" or "you have no quota". The first is transient and
+# worth retrying; the second will never succeed, so retrying it wastes time and
+# fills a run with identical failures instead of stopping.
+PERMANENT_QUOTA_CODES = ("insufficient_quota", "credit_balance_exhausted", "billing_not_active")
+
+
+class ProviderUnavailable(RuntimeError):
+    """The provider cannot serve this run at all -- quota, billing or credentials."""
+
+
+def _is_permanent_quota_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return any(code in text for code in PERMANENT_QUOTA_CODES)
+
+
 # ── Per-token pricing (USD) ────────────────────────────────────────────
 # Prices are recorded for reproducibility and should be frozen for a thesis run.
 # GPT-5.6 Terra source (verified 2026-09-21):
@@ -103,6 +118,7 @@ class LLMDiagnoser:
         # Token usage from the most recent call
         self.last_usage: Dict[str, Any] = {}
         self.last_raw_response = ""
+        self.last_finish_reason: Optional[str] = None
 
         # Build a reusable client once (instead of per-request)
         if provider == LLMProvider.OPENAI:
@@ -169,11 +185,17 @@ class LLMDiagnoser:
                     return await self._diagnose_local(prompt)
                 raise ValueError(f"Unsupported LLM provider: {self.provider}")
             except openai.RateLimitError as exc:
+                if _is_permanent_quota_error(exc):
+                    raise ProviderUnavailable(
+                        f"{self.provider.value} rejected the request and retrying will not help: {exc}"
+                    ) from exc
                 wait = LLM_BACKOFF**attempt
                 logger.warning(
                     "Rate-limited (attempt %d/%d), retrying in %.1fs: %s", attempt + 1, MAX_LLM_RETRIES, wait, exc
                 )
                 await asyncio.sleep(wait)
+            except openai.AuthenticationError as exc:
+                raise ProviderUnavailable(f"{self.provider.value} rejected the credentials: {exc}") from exc
             except openai.APIConnectionError as exc:
                 wait = LLM_BACKOFF**attempt
                 logger.warning(
@@ -266,6 +288,10 @@ class LLMDiagnoser:
         pt = usage.prompt_tokens if usage else 0
         ct = usage.completion_tokens if usage else 0
         self._set_usage(response, pt, ct, local=True)
-        content = response.choices[0].message.content
+        choice = response.choices[0]
+        content = choice.message.content
+        # Recorded before parsing: a failed inference is a result, and it cannot
+        # be explained later without the response that produced it.
         self.last_raw_response = content
+        self.last_finish_reason = getattr(choice, "finish_reason", None)
         return self._parse_diagnosis(content)

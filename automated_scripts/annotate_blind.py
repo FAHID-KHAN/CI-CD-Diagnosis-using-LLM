@@ -293,6 +293,27 @@ def parse_args():
     return parser.parse_args()
 
 
+PARTITION_ORDER = ("development", "pilot", "held_out")
+
+
+def order_by_partition(logs: list[dict], root: Path) -> list[dict]:
+    """Offer development cases first, then pilot, then held-out.
+
+    The split exists so the codebook and prompt are refined on development
+    cases before the held-out set is touched. Walking the cohort in file order
+    hands them out mixed, which defeats that. Cases outside any partition, and
+    any cohort with no split manifest, keep their original order.
+    """
+    manifest_path = root / "split_manifest.json"
+    if not manifest_path.exists():
+        return logs
+
+    partitions = json.loads(manifest_path.read_text(encoding="utf-8")).get("partitions", {})
+    rank = {case_id: index for index, name in enumerate(PARTITION_ORDER) for case_id in partitions.get(name, [])}
+    # Unassigned cases sort last; ties keep the original cohort order.
+    return sorted(logs, key=lambda log: rank.get(log["log_id"], len(PARTITION_ORDER)))
+
+
 def run_annotate(logs: list[dict], root: Path, output_path: Path, payload: dict, annotator: str) -> int:
     annotations = {item["log_id"]: item for item in payload.get("annotations", [])}
     for index, log in enumerate(logs, 1):
@@ -422,7 +443,7 @@ def main() -> int:
         print(f"ERROR: Eligible cohort does not exist: {input_path}")
         return 1
 
-    logs = json.loads(input_path.read_text(encoding="utf-8"))
+    logs = order_by_partition(json.loads(input_path.read_text(encoding="utf-8")), root)
     if output_path.exists():
         payload = json.loads(output_path.read_text(encoding="utf-8"))
     elif args.mode == "verify":

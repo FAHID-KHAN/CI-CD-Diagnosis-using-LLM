@@ -25,7 +25,12 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.join(parent_dir, ".env"))
 
-from src.api.llm_service import DIAGNOSIS_PROMPT, DIAGNOSIS_RESPONSE_FORMAT, LLMDiagnoser
+from src.api.llm_service import (
+    DIAGNOSIS_PROMPT,
+    DIAGNOSIS_RESPONSE_FORMAT,
+    LLMDiagnoser,
+    ProviderUnavailable,
+)
 from src.api.grounding import GroundingVerifier
 from src.api.models import LLMProvider, LogLine
 from src.api.filtering import LogFilter
@@ -57,6 +62,18 @@ def parse_args():
         "--pilot",
         action="store_true",
         help="Run the required five-log pilot",
+    )
+    parser.add_argument(
+        "--models",
+        help=(
+            "Comma-separated subset of the fixed conditions to run, e.g. 'openai'. "
+            "For iterating on development only; the held-out run always uses both."
+        ),
+    )
+    parser.add_argument(
+        "--partition",
+        choices=("development", "pilot", "held_out"),
+        help="Run only this partition of the split. Development is the set the plan permits tuning on.",
     )
     parser.add_argument("--ground-truth", required=True, help="Blind ground-truth JSON")
     parser.add_argument("--output-dir", required=True, help="Dedicated pilot or final output directory")
@@ -257,11 +274,19 @@ async def benchmark_model(
 
         print(f"  [{i}/{len(logs)}] {repo} - {workflow}", end=" ", flush=True)
 
-        diagnosis, elapsed_ms, error = await diagnose_one(
-            diagnoser,
-            filtered,
-            log_entry,
-        )
+        try:
+            diagnosis, elapsed_ms, error = await diagnose_one(
+                diagnoser,
+                filtered,
+                log_entry,
+            )
+        except ProviderUnavailable as exc:
+            # Nothing in this run will succeed, so stop rather than recording
+            # the same failure against every remaining case.
+            print(f"\n\n  ABORTED: {exc}")
+            print(f"  {len(results)} case(s) completed before this; progress is saved.")
+            save_checkpoint(checkpoint_file, results)
+            raise
 
         if diagnosis:
             usage = diagnoser.last_usage
@@ -299,6 +324,9 @@ async def benchmark_model(
             print(f"OK  {diagnosis.get('error_type', '?')} ({conf:.0%}) [{elapsed_ms:.0f}ms]")
         else:
             print(f"FAIL  {error[:50] if error else '?'}")
+            # Keep what the model actually returned. A failed inference counts
+            # as incorrect in the metrics, so it has to be explainable.
+            raw = getattr(diagnoser, "last_raw_response", "") or ""
             results.append(
                 {
                     "status": "error",
@@ -308,6 +336,10 @@ async def benchmark_model(
                     "model": label,
                     "execution_time_ms": elapsed_ms,
                     "error": error or "Unknown diagnosis error",
+                    "raw_response": raw,
+                    "raw_response_chars": len(raw),
+                    "finish_reason": getattr(diagnoser, "last_finish_reason", None),
+                    "request_metadata": getattr(diagnoser, "last_usage", {}),
                 }
             )
 
@@ -355,12 +387,24 @@ async def main():
     args = parse_args()
 
     input_file = resolve_input(args)
+
+    # Both conditions always run for held-out: the comparison is the study.
+    models = DEFAULT_MODELS
+    if args.models:
+        if args.partition == "held_out":
+            print("ERROR: --models cannot narrow the held-out run; both conditions are the comparison.")
+            sys.exit(1)
+        wanted = [item.strip().lower() for item in args.models.split(",") if item.strip()]
+        models = [spec for spec in DEFAULT_MODELS if any(token in spec.lower() for token in wanted)]
+        if not models:
+            print(f"ERROR: --models {args.models!r} matched none of: {', '.join(DEFAULT_MODELS)}")
+            sys.exit(1)
     print()
     print("=" * 70)
     print("  Multi-Model Benchmark")
     print("=" * 70)
     print(f"  Input : {input_file}")
-    print(f"  Models: {', '.join(DEFAULT_MODELS)}")
+    print(f"  Models: {', '.join(models)}")
     print(f"  Reasoning effort: {REASONING_EFFORT}")
     print()
 
@@ -389,7 +433,39 @@ async def main():
         print(f"  WARNING: proceeding over {len(overlap)} excluded case(s).")
         print(f"  Justification: {args.allow_excluded_cases}")
 
-    validation_error = validate_inputs(logs, ground_truth)
+    if args.partition:
+        # The split manifest sits beside the triaged cohort this input came from.
+        split_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(input_file))), "split_manifest.json")
+        if not os.path.exists(split_path):
+            print(f"ERROR: No split manifest at {split_path}; run make_split.py first.")
+            sys.exit(1)
+        with open(split_path) as f:
+            partitions = json.load(f).get("partitions", {})
+        wanted = set(partitions.get(args.partition, []))
+        if not wanted:
+            print(f"ERROR: The split manifest has no cases in the {args.partition} partition.")
+            sys.exit(1)
+
+        # The held-out set is evaluated once, after the freeze. Running it
+        # earlier would spend the one measurement the study is built around.
+        if args.partition == "held_out":
+            freeze_path = os.path.join(os.path.dirname(split_path), "freeze_record.json")
+            if not os.path.exists(freeze_path):
+                print("ERROR: The held-out partition requires a freeze record.")
+                print("Create one with: python automated_scripts/freeze_package.py create")
+                sys.exit(1)
+
+        before = len(logs)
+        logs = [log for log in logs if log.get("log_id") in wanted]
+        print(f"  Partition: {args.partition} ({len(logs)} of {before} cases)")
+        if args.partition != "held_out":
+            print("  These results are for refining the system, not for reporting as findings.")
+
+    # Validated after the partition filter, so running one partition does not
+    # require the whole cohort to be annotated first.
+    scoped_ids = {log.get("log_id") for log in logs}
+    scoped_ground_truth = [item for item in ground_truth if item.get("log_id") in scoped_ids]
+    validation_error = validate_inputs(logs, scoped_ground_truth)
     if validation_error:
         print(f"ERROR: {validation_error}")
         sys.exit(1)
@@ -397,7 +473,7 @@ async def main():
     if args.pilot:
         logs = logs[:5]
     print(f"  Logs to benchmark: {len(logs)}")
-    print(f"  Ground truth: {len(ground_truth)} annotations loaded")
+    print(f"  Ground truth: {len(scoped_ground_truth)} annotations loaded")
     print()
 
     # Prepare output directory
@@ -409,7 +485,8 @@ async def main():
         "input_sha256": _sha256_file(input_file),
         "ground_truth_sha256": _sha256_file(args.ground_truth),
         "pilot": args.pilot,
-        "models_requested": DEFAULT_MODELS,
+        "partition": args.partition,
+        "models_requested": models,
     }
     if os.path.exists(metadata_path):
         with open(metadata_path) as f:
@@ -423,7 +500,7 @@ async def main():
         if os.listdir(out_dir):
             print("ERROR: Output directory is not empty and has no run metadata.")
             sys.exit(1)
-        runtime_metadata = collect_runtime_metadata(DEFAULT_MODELS)
+        runtime_metadata = collect_runtime_metadata(models)
         runtime_metadata.update(expected_identity)
         runtime_metadata["input_file"] = os.path.abspath(input_file)
         runtime_metadata["ground_truth_file"] = os.path.abspath(args.ground_truth)
@@ -433,6 +510,7 @@ async def main():
             "max_tokens": MAX_FILTER_TOKENS,
         }
         runtime_metadata["reasoning_effort"] = REASONING_EFFORT
+        runtime_metadata["partition"] = args.partition
 
     # Recorded on fresh runs and on resumes alike, so the provenance of a
     # resumed run states which cases the guard checked.
@@ -451,7 +529,7 @@ async def main():
     all_results = {}
     all_metrics = {}
 
-    for model_spec in DEFAULT_MODELS:
+    for model_spec in models:
         provider, model_name = parse_model_spec(model_spec)
         label = f"{provider.value}/{model_name}"
         safe_name = model_spec.replace("/", "_").replace(":", "_")
@@ -470,6 +548,10 @@ async def main():
                 REASONING_EFFORT,
                 model_file,
             )
+        except ProviderUnavailable as exc:
+            print(f"\n  Stopping: {exc}")
+            print("  Fix the provider and re-run; completed cases resume from the checkpoint.")
+            sys.exit(1)
         except Exception as e:
             print(f"  ERROR: Model {label} failed entirely: {e}")
             results = []
@@ -480,7 +562,7 @@ async def main():
         save_checkpoint(model_file, results)
 
         # Compute metrics
-        metrics = compute_model_metrics(results, ground_truth)
+        metrics = compute_model_metrics(results, scoped_ground_truth)
         all_metrics[label] = metrics
 
         print(
@@ -508,8 +590,8 @@ async def main():
 
     # ── Statistical tests (when 2+ models and ground truth) ───────────
     model_labels = list(all_results.keys())
-    if ground_truth and len(model_labels) >= 2:
-        gt_map = {a["log_id"]: a for a in ground_truth}
+    if scoped_ground_truth and len(model_labels) >= 2:
+        gt_map = {a["log_id"]: a for a in scoped_ground_truth}
 
         def _to_preds(results_list):
             preds = []

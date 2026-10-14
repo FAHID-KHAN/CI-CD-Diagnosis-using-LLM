@@ -742,6 +742,61 @@ def test_aggregate_preprocessing_recall_flags_total_evidence_loss():
     assert summary["mean_recall"] == pytest.approx(0.5, abs=0.001)
 
 
+# ── Provider errors: stop on permanent ones, retry transient ones ─────────
+
+
+def test_an_exhausted_quota_is_not_treated_as_a_transient_rate_limit():
+    """Retrying 'no credits' wastes time and fills a run with identical failures."""
+    from src.api.llm_service import _is_permanent_quota_error
+
+    assert _is_permanent_quota_error(Exception("Error code: 429 - credit_balance_exhausted"))
+    assert _is_permanent_quota_error(Exception("insufficient_quota"))
+    assert not _is_permanent_quota_error(Exception("Error code: 429 - rate_limit_exceeded, slow down"))
+
+
+def test_provider_unavailable_is_its_own_error_type():
+    """The benchmark distinguishes 'this run cannot proceed' from one bad case."""
+    from src.api.llm_service import ProviderUnavailable
+
+    assert issubclass(ProviderUnavailable, RuntimeError)
+
+
+# ── Annotation order: finish development before touching held-out ─────────
+
+
+def test_annotation_offers_development_then_pilot_then_held_out(tmp_path):
+    """Refine the codebook on development cases before the held-out set is read."""
+    import json as _json
+
+    from automated_scripts.annotate_blind import order_by_partition
+
+    (tmp_path / "split_manifest.json").write_text(
+        _json.dumps({"partitions": {"development": ["d1", "d2"], "pilot": ["p1"], "held_out": ["h1", "h2"]}})
+    )
+    logs = [{"log_id": i} for i in ("h1", "p1", "d1", "h2", "d2")]
+
+    ordered = [log["log_id"] for log in order_by_partition(logs, tmp_path)]
+    assert ordered == ["d1", "d2", "p1", "h1", "h2"]
+
+
+def test_a_cohort_with_no_split_keeps_its_original_order(tmp_path):
+    """The smoke cohort and any un-split study must behave as before."""
+    from automated_scripts.annotate_blind import order_by_partition
+
+    logs = [{"log_id": i} for i in ("c", "a", "b")]
+    assert [log["log_id"] for log in order_by_partition(logs, tmp_path)] == ["c", "a", "b"]
+
+
+def test_cases_outside_every_partition_are_offered_last(tmp_path):
+    import json as _json
+
+    from automated_scripts.annotate_blind import order_by_partition
+
+    (tmp_path / "split_manifest.json").write_text(_json.dumps({"partitions": {"development": ["d1"]}}))
+    logs = [{"log_id": i} for i in ("stray", "d1")]
+    assert [log["log_id"] for log in order_by_partition(logs, tmp_path)] == ["d1", "stray"]
+
+
 # ── The split: families move together, repositories stay represented ──────
 
 

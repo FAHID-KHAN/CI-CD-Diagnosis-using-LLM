@@ -392,6 +392,58 @@ def load_experiment(experiment_path: str, ground_truth_path: Optional[str] = Non
     return report
 
 
+def merge_experiments(reports: List[ExperimentReport], label: Optional[str] = None) -> ExperimentReport:
+    """Pool separate runs over the same cases into one comparable experiment.
+
+    Conditions are often run separately -- a fast hosted model while iterating,
+    a slow local one overnight -- which leaves each in its own directory. They
+    are still the same cases under different conditions, so pooling them gives
+    the side-by-side comparison, rather than two reports read one after another.
+
+    Model labels must not collide: the same model appearing in two runs is two
+    measurements of one condition, not two conditions, and merging them would
+    silently discard one.
+    """
+    if not reports:
+        raise ValueError("At least one experiment is required")
+    if len(reports) == 1:
+        return reports[0]
+
+    first = reports[0]
+    merged = ExperimentReport(
+        path=first.path,
+        study_id=first.study_id,
+        experiment_id=label or "+".join(report.experiment_id for report in reports),
+    )
+    merged.run_context = dict(first.run_context)
+    merged.run_context["merged_from"] = [report.label for report in reports]
+    merged.ground_truth = dict(first.ground_truth)
+    merged.ground_truth_audit = first.ground_truth_audit
+
+    for report in reports:
+        for log_id in report.log_order:
+            if log_id not in merged.log_info:
+                merged.log_order.append(log_id)
+                merged.log_info[log_id] = report.log_info[log_id]
+        merged.ground_truth.update(report.ground_truth)
+        for label_ in report.model_labels:
+            if label_ in merged.outcomes:
+                raise ValueError(
+                    f"{label_} appears in more than one experiment; merging would discard a run. "
+                    "Compare those separately instead."
+                )
+            merged.model_labels.append(label_)
+            merged.metrics[label_] = report.metrics[label_]
+            merged.outcomes[label_] = report.outcomes[label_]
+        for issue in report.issues:
+            if issue not in merged.issues:
+                merged.issues.append(issue)
+
+    # Statistics stored by a single-condition run no longer describe the pair.
+    merged.statistical_tests = None
+    return merged
+
+
 def pairwise_agreements(report: ExperimentReport) -> List[PairAgreement]:
     """Compare every ordered pair of conditions in one experiment."""
     pairs: List[PairAgreement] = []

@@ -23,7 +23,7 @@ Supervisors: Jussi Rasku, Md Mahade Hasan. Thesis seminar: 9 November 2026.
 | | |
 | --- | --- |
 | Code | Complete. 70 tests, lint and type checks pass. |
-| Study data | Empty. `data/studies/` was cleared on 22 September 2026. |
+| Study data | `thesis_pair_2026`: 179 raw, 56 eligible, 27 annotated, split written. |
 | Active config | `configs/thesis_pair_2026.yaml` — django/django and gradle/gradle |
 | Blocked on | Supervisor approval of the evaluation method |
 
@@ -78,6 +78,53 @@ populated three of eight categories. `dependency_error`, `test_failure`,
 exists in the extract the model was given. In a five-case pilot it read 97.5%
 while evidence-line F1 against annotated lines was about 6%. Report them
 separately.
+
+**The log filter loses the evidence on large logs.** Measured on the 16-case
+development partition, 14 October 2026 (`experiments/dev_001`, hosted model):
+
+| | |
+| --- | --- |
+| Mean preprocessing recall | 32.6% |
+| Cases where no verified evidence line survived | 9 of 16 |
+| Cases fully preserved | 3 of 16 |
+
+Every one of those nine returned `unknown`, at 97–98% confidence. The model was
+not guessing; it correctly reported that it could not see the failure. The
+run's 12.5% category accuracy therefore measures the filter, not the model.
+
+**Diagnosed and partly fixed, 14 October 2026.** Instrumenting the three
+filtering stages (`LogFilter.trace_filtering`) attributed the loss precisely:
+keyword matching was finding all the evidence (31/31, 34/34, 50/50), and the
+500-line cap was then discarding it. The cap kept the *first* 500 lines of what
+survived the window, so setup output at the top of a log filled the budget
+before the failure near the bottom was reached. Token truncation was not
+involved; it never received the evidence.
+
+The cap now keeps the last 500 lines. A CI log is chronological and a failure
+is reported where it occurs, which is near the end. Effect on the development
+partition:
+
+| | before | after |
+| --- | ---: | ---: |
+| Cases with no evidence surviving | 9 of 16 | 5 of 16 |
+| Cases fully preserved | 3 of 16 | 7 of 16 |
+| Mean preprocessing recall | 32.6% | 57.6% |
+
+**The five remaining failures are a documented limitation, not a defect to
+fix.** Every one is a log of 41,000 to 96,000 lines. Three still lose at the
+cap: with 800 to 1,500 keyword hits, the context windows cover far more than
+500 lines even from the tail. Two lose at the keyword window itself -- the
+failure text contains none of the configured markers.
+
+Decision (14 October 2026): accept this rather than tune further. "Keyword and
+context-window filtering does not scale to logs above roughly 40,000 lines" is
+a reportable finding about the limits of the approach, and preprocessing recall
+makes the boundary measurable rather than asserted. Continued tuning against
+five development cases would also risk fitting the filter to them.
+
+This defect was found on the partition the plan permits tuning on, which is
+what the development set is for. The change is recorded here and belongs in the
+freeze record and the methods chapter.
 
 **Cost and time.** Proprietary: 19.4 s and USD 0.038 per case. Open-weights:
 17.4 minutes per case, no API cost. A 26-case cohort means roughly 7 hours of

@@ -1,6 +1,7 @@
 # filtering.py - Log filtering strategies
 
 import logging
+import re
 from typing import Any, List
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,81 @@ class LogFilter:
         return contexts
 
     @staticmethod
+    def trace_filtering(
+        log_content: str,
+        evidence_lines,
+        max_lines: int = 500,
+        window_size: int = 20,
+        max_tokens: int = 12000,
+    ) -> dict:
+        """Report how many verified evidence lines survive each filtering stage.
+
+        Filtering is three stages and any of them can discard the evidence a
+        diagnosis depends on. Knowing the total loss is not enough to fix it;
+        this attributes the loss to the stage that caused it.
+
+        Stages: keyword matching with its context window, the line cap, then
+        truncation to the token budget. Line numbers are 1-based throughout, to
+        match the ``[Line N]`` markers and the annotated evidence.
+        """
+        wanted = {int(n) for n in (evidence_lines or [])}
+        lines = log_content.split("\n")
+        total = len(lines)
+
+        error_indices = LogFilter.filter_by_keywords(lines)
+        if error_indices:
+            covered: set[int] = set()
+            for start, end, _ in LogFilter.get_context_window(lines, error_indices, window_size=window_size):
+                covered.update(range(start, end))
+            after_window = {index + 1 for index in covered}
+        else:
+            # No keyword matched, so the tail is kept instead.
+            tail_start = max(0, total - max_lines)
+            after_window = {index + 1 for index in range(tail_start, total)}
+
+        ordered = sorted(after_window)
+        after_cap = set(ordered[-max_lines:])
+
+        rendered = "\n".join(f"[Line {n}] {lines[n - 1]}" for n in sorted(after_cap))
+        after_tokens = {
+            int(match.group(1))
+            for match in re.finditer(r"\[Line (\d+)\]", LogFilter._truncate_to_tokens(rendered, max_tokens))
+        }
+
+        def share(kept: set) -> float:
+            return round(len(wanted & kept) / len(wanted), 4) if wanted else 0.0
+
+        return {
+            "raw_lines": total,
+            "evidence_lines": len(wanted),
+            "keyword_matches": len(error_indices),
+            "after_keyword_window": {
+                "lines": len(after_window),
+                "evidence_kept": len(wanted & after_window),
+                "recall": share(after_window),
+            },
+            "after_line_cap": {
+                "lines": len(after_cap),
+                "evidence_kept": len(wanted & after_cap),
+                "recall": share(after_cap),
+            },
+            "after_token_truncation": {
+                "lines": len(after_tokens),
+                "evidence_kept": len(wanted & after_tokens),
+                "recall": share(after_tokens),
+            },
+            "lost_at": (
+                "keyword_window"
+                if wanted and not (wanted & after_window)
+                else (
+                    "line_cap"
+                    if wanted and not (wanted & after_cap)
+                    else "token_truncation" if wanted and not (wanted & after_tokens) else None
+                )
+            ),
+        }
+
+    @staticmethod
     def apply_smart_filtering(
         log_content: str,
         max_lines: int = 500,
@@ -107,7 +183,13 @@ class LogFilter:
 
         filtered_lines.sort(key=lambda x: x[0])
 
-        result = [f"[Line {number + 1}] {content}" for number, content in filtered_lines[:max_lines]]
+        # Keep the LAST max_lines, not the first. A CI log is chronological and
+        # a failure is reported where it happens, which is near the end: the
+        # failure summary, the stack trace, the "BUILD FAILED" block. Keeping
+        # the head discarded every verified evidence line in 7 of 16 development
+        # cases, because setup noise at the top filled the budget before the
+        # failure was reached.
+        result = [f"[Line {number + 1}] {content}" for number, content in filtered_lines[-max_lines:]]
         return LogFilter._truncate_to_tokens("\n".join(result), max_tokens)
 
     @staticmethod
