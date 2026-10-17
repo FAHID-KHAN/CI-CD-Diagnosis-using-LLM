@@ -122,6 +122,42 @@ a reportable finding about the limits of the approach, and preprocessing recall
 makes the boundary measurable rather than asserted. Continued tuning against
 five development cases would also risk fitting the filter to them.
 
+**Confirmed against the models, 14 October 2026.** Re-running the development
+partition on the hosted condition after the cap fix (`experiments/dev_002`
+against `dev_001`, same cases, same prompt, same schema -- only the filter
+changed):
+
+| | dev_001 | dev_002 |
+| --- | ---: | ---: |
+| Mean preprocessing recall | 32.6% | 57.6% |
+| Category accuracy | 12.5% | 43.8% |
+| Predictions changed | — | 6 of 16 |
+
+Five cases went from wrong to right, and every one lies in the 1,000-4,000 line
+band the cap fix rescued:
+
+| Raw lines | Verified category | dev_001 | dev_002 |
+| ---: | --- | --- | --- |
+| 2,547 | permission_denied | unknown | permission_denied |
+| 2,413 | syntax_error | unknown | syntax_error |
+| 3,661 | dependency_error | unknown | dependency_error |
+| 1,262 | network_error | permission_denied | network_error |
+| 2,527 | permission_denied | unknown | permission_denied |
+
+The five logs above 40,000 lines were unchanged, still `unknown`, as expected.
+
+Two things follow. The recovered cases span four different categories, so the
+earlier appearance that the system could only answer `unknown` or
+`build_configuration` was an artefact of evidence loss, not a limit of the
+model. And four django cases verified as `test_failure` are still consistently
+answered `build_configuration` despite their evidence surviving filtering
+(236-239 line logs) -- that is a codebook or model-error question, not a
+preprocessing one, and it concerns the `Run Quality Checks on a PR` job whose
+scope has been in doubt since the repository assessment.
+
+These are development-partition figures. They exist to direct the work and must
+never be reported as findings.
+
 This defect was found on the partition the plan permits tuning on, which is
 what the development set is for. The change is recorded here and belongs in the
 freeze record and the methods chapter.
