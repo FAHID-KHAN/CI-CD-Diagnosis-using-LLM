@@ -1,0 +1,746 @@
+{
+  "measured_at": "2026-10-18T11:36:11.810179+00:00",
+  "samples_per_repository": 4,
+  "max_lines_threshold": 40000,
+  "filter": {
+    "max_lines": 500,
+    "window_size": 20,
+    "max_tokens": 12000
+  },
+  "results": [
+    {
+      "repository": "babel/babel",
+      "error": null,
+      "failed_runs_available": 100,
+      "real_runs_available": 98,
+      "logs_sampled": 4,
+      "lines": [
+        {
+          "run_id": 39096171890,
+          "workflow": "Lock Threads",
+          "raw_lines": 60,
+          "kept_lines": 34,
+          "tokens": 1142
+        },
+        {
+          "run_id": 39001530889,
+          "workflow": "Lock Threads",
+          "raw_lines": 60,
+          "kept_lines": 33,
+          "tokens": 1114
+        },
+        {
+          "run_id": 38849264376,
+          "workflow": "Lock Threads",
+          "raw_lines": 60,
+          "kept_lines": 33,
+          "tokens": 1114
+        },
+        {
+          "run_id": 38849033855,
+          "workflow": "E2E tests",
+          "raw_lines": 13355,
+          "kept_lines": 282,
+          "tokens": 11985
+        }
+      ],
+      "workflows": [
+        "CI",
+        "E2E tests",
+        "Lock Threads",
+        "REPL",
+        "Release for testing"
+      ],
+      "median_lines": 60,
+      "min_lines": 60,
+      "max_lines_seen": 13355,
+      "median_coverage": 0.55,
+      "under_threshold": 4,
+      "distinct_workflows_sampled": 2,
+      "verdict": "tractable"
+    },
+    {
+      "repository": "netty/netty",
+      "error": null,
+      "failed_runs_available": 100,
+      "real_runs_available": 91,
+      "logs_sampled": 4,
+      "lines": [
+        {
+          "run_id": 39112488181,
+          "workflow": "PR Reports",
+          "raw_lines": 77,
+          "kept_lines": 32,
+          "tokens": 1031
+        },
+        {
+          "run_id": 39111694212,
+          "workflow": "check-jdk.ea-version.yml",
+          "raw_lines": 260,
+          "kept_lines": 42,
+          "tokens": 1454
+        },
+        {
+          "run_id": 39109666224,
+          "workflow": "PR Reports",
+          "raw_lines": 77,
+          "kept_lines": 32,
+          "tokens": 1034
+        },
+        {
+          "run_id": 39107556105,
+          "workflow": "Build PR",
+          "raw_lines": 1324878,
+          "kept_lines": 235,
+          "tokens": 11989
+        }
+      ],
+      "workflows": [
+        "Auto-port to 4.1",
+        "Auto-port to 5.0",
+        "Build PR",
+        "Build project",
+        "Cancel PR Jobs on Merge",
+        "Deploy project",
+        "PR Reports",
+        "Verify native library loading on musl"
+      ],
+      "median_lines": 168,
+      "min_lines": 77,
+      "max_lines_seen": 1324878,
+      "median_coverage": 0.2886,
+      "under_threshold": 3,
+      "distinct_workflows_sampled": 3,
+      "verdict": "mixed (3/4 small)"
+    },
+    {
+      "repository": "etcd-io/etcd",
+      "error": null,
+      "failed_runs_available": 100,
+      "real_runs_available": 74,
+      "logs_sampled": 4,
+      "lines": [
+        {
+          "run_id": 39084268054,
+          "workflow": "Measure TestGrid Flakiness",
+          "raw_lines": 285,
+          "kept_lines": 43,
+          "tokens": 1863
+        },
+        {
+          "run_id": 38987819015,
+          "workflow": "Measure TestGrid Flakiness",
+          "raw_lines": 285,
+          "kept_lines": 43,
+          "tokens": 1865
+        },
+        {
+          "run_id": 38831234779,
+          "workflow": "Measure TestGrid Flakiness",
+          "raw_lines": 285,
+          "kept_lines": 43,
+          "tokens": 1864
+        },
+        {
+          "run_id": 38661747198,
+          "workflow": "Measure TestGrid Flakiness",
+          "raw_lines": 285,
+          "kept_lines": 43,
+          "tokens": 1866
+        }
+      ],
+      "workflows": [
+        ".github/workflows/bump-devcontainer-version.yml",
+        "Bump devcontainer version",
+        "Measure TestGrid Flakiness"
+      ],
+      "median_lines": 285,
+      "min_lines": 285,
+      "max_lines_seen": 285,
+      "median_coverage": 0.1509,
+      "under_threshold": 4,
+      "distinct_workflows_sampled": 1,
+      "verdict": "tractable"
+    },
+    {
+      "repository": "symfony/symfony",
+      "error": null,
+      "failed_runs_available": 100,
+      "real_runs_available": 98,
+      "logs_sampled": 4,
+      "lines": [
+        {
+          "run_id": 39123012759,
+          "workflow": "Unit Tests",
+          "raw_lines": 88075,
+          "kept_lines": 207,
+          "tokens": 11955
+        },
+        {
+          "run_id": 39120164708,
+          "workflow": "CS",
+          "raw_lines": 1138,
+          "kept_lines": 290,
+          "tokens": 11990
+        },
+        {
+          "run_id": 39120153090,
+          "workflow": "CS",
+          "raw_lines": 1055,
+          "kept_lines": 302,
+          "tokens": 11995
+        },
+        {
+          "run_id": 39120152441,
+          "workflow": "Static Analysis",
+          "raw_lines": 3337,
+          "kept_lines": 293,
+          "tokens": 11976
+        }
+      ],
+      "workflows": [
+        "CS",
+        "Integration",
+        "Static Analysis",
+        "Unit Tests",
+        "Verify Packages",
+        "Windows"
+      ],
+      "median_lines": 2237,
+      "min_lines": 1055,
+      "max_lines_seen": 88075,
+      "median_coverage": 0.1713,
+      "under_threshold": 3,
+      "distinct_workflows_sampled": 3,
+      "verdict": "mixed (3/4 small)"
+    },
+    {
+      "repository": "vuejs/core",
+      "error": null,
+      "failed_runs_available": 100,
+      "real_runs_available": 49,
+      "logs_sampled": 4,
+      "lines": [
+        {
+          "run_id": 39003919325,
+          "workflow": "ci",
+          "raw_lines": 3528,
+          "kept_lines": 177,
+          "tokens": 11926
+        },
+        {
+          "run_id": 38986945472,
+          "workflow": "ci",
+          "raw_lines": 3260,
+          "kept_lines": 130,
+          "tokens": 11899
+        },
+        {
+          "run_id": 38885619039,
+          "workflow": "ci",
+          "raw_lines": 3338,
+          "kept_lines": 195,
+          "tokens": 11922
+        },
+        {
+          "run_id": 38834051947,
+          "workflow": "ci",
+          "raw_lines": 3261,
+          "kept_lines": 136,
+          "tokens": 11938
+        }
+      ],
+      "workflows": [
+        "autofix.ci",
+        "ci",
+        "size data"
+      ],
+      "median_lines": 3299,
+      "min_lines": 3260,
+      "max_lines_seen": 3528,
+      "median_coverage": 0.0459,
+      "under_threshold": 4,
+      "distinct_workflows_sampled": 1,
+      "verdict": "tractable"
+    },
+    {
+      "repository": "sveltejs/svelte",
+      "error": null,
+      "failed_runs_available": 100,
+      "real_runs_available": 94,
+      "logs_sampled": 4,
+      "lines": [
+        {
+          "run_id": 38975953734,
+          "workflow": "CI",
+          "raw_lines": 3560,
+          "kept_lines": 42,
+          "tokens": 1641
+        },
+        {
+          "run_id": 38669257972,
+          "workflow": "CI",
+          "raw_lines": 3626,
+          "kept_lines": 78,
+          "tokens": 3772
+        },
+        {
+          "run_id": 38669138744,
+          "workflow": "CI",
+          "raw_lines": 3627,
+          "kept_lines": 78,
+          "tokens": 3773
+        },
+        {
+          "run_id": 38669033625,
+          "workflow": "CI",
+          "raw_lines": 3662,
+          "kept_lines": 78,
+          "tokens": 3694
+        }
+      ],
+      "workflows": [
+        "CI",
+        "PR #18861"
+      ],
+      "median_lines": 3626,
+      "min_lines": 3560,
+      "max_lines_seen": 3662,
+      "median_coverage": 0.0214,
+      "under_threshold": 4,
+      "distinct_workflows_sampled": 1,
+      "verdict": "tractable"
+    },
+    {
+      "repository": "vitejs/vite",
+      "error": null,
+      "failed_runs_available": 100,
+      "real_runs_available": 100,
+      "logs_sampled": 4,
+      "lines": [
+        {
+          "run_id": 39116756330,
+          "workflow": "CI",
+          "raw_lines": 4707,
+          "kept_lines": 79,
+          "tokens": 3480
+        },
+        {
+          "run_id": 39116442459,
+          "workflow": "CI",
+          "raw_lines": 4703,
+          "kept_lines": 81,
+          "tokens": 3044
+        },
+        {
+          "run_id": 39116418505,
+          "workflow": "CI",
+          "raw_lines": 4846,
+          "kept_lines": 61,
+          "tokens": 2453
+        },
+        {
+          "run_id": 39116189072,
+          "workflow": "CI",
+          "raw_lines": 4739,
+          "kept_lines": 63,
+          "tokens": 2477
+        }
+      ],
+      "workflows": [
+        "CI"
+      ],
+      "median_lines": 4723,
+      "min_lines": 4703,
+      "max_lines_seen": 4846,
+      "median_coverage": 0.015,
+      "under_threshold": 4,
+      "distinct_workflows_sampled": 1,
+      "verdict": "tractable"
+    },
+    {
+      "repository": "gohugoio/hugo",
+      "error": null,
+      "failed_runs_available": 100,
+      "real_runs_available": 97,
+      "logs_sampled": 4,
+      "lines": [
+        {
+          "run_id": 39024299933,
+          "workflow": "Test",
+          "raw_lines": 14091,
+          "kept_lines": 230,
+          "tokens": 11976
+        },
+        {
+          "run_id": 38303931362,
+          "workflow": "Test",
+          "raw_lines": 10601,
+          "kept_lines": 270,
+          "tokens": 11980
+        },
+        {
+          "run_id": 38296239044,
+          "workflow": "Test",
+          "raw_lines": 9964,
+          "kept_lines": 283,
+          "tokens": 11982
+        },
+        {
+          "run_id": 38286363650,
+          "workflow": "Test",
+          "raw_lines": 10304,
+          "kept_lines": 270,
+          "tokens": 11989
+        }
+      ],
+      "workflows": [
+        "Build Docker image",
+        "Test"
+      ],
+      "median_lines": 10452,
+      "min_lines": 9964,
+      "max_lines_seen": 14091,
+      "median_coverage": 0.0258,
+      "under_threshold": 4,
+      "distinct_workflows_sampled": 1,
+      "verdict": "tractable"
+    },
+    {
+      "repository": "mockito/mockito",
+      "error": null,
+      "failed_runs_available": 75,
+      "real_runs_available": 64,
+      "logs_sampled": 3,
+      "lines": [
+        {
+          "run_id": 38609515792,
+          "workflow": "CI",
+          "raw_lines": 44413,
+          "kept_lines": 275,
+          "tokens": 11995
+        },
+        {
+          "run_id": 38290548304,
+          "workflow": "CI",
+          "raw_lines": 26650,
+          "kept_lines": 294,
+          "tokens": 11968
+        },
+        {
+          "run_id": 38127918951,
+          "workflow": "CI",
+          "raw_lines": 19739,
+          "kept_lines": 220,
+          "tokens": 11991
+        }
+      ],
+      "workflows": [
+        "CI"
+      ],
+      "median_lines": 26650,
+      "min_lines": 19739,
+      "max_lines_seen": 44413,
+      "median_coverage": 0.011,
+      "under_threshold": 2,
+      "distinct_workflows_sampled": 1,
+      "verdict": "mixed (2/3 small)"
+    },
+    {
+      "repository": "laravel/framework",
+      "error": null,
+      "failed_runs_available": 100,
+      "real_runs_available": 99,
+      "logs_sampled": 4,
+      "lines": [
+        {
+          "run_id": 39098413633,
+          "workflow": "tests",
+          "raw_lines": 48478,
+          "kept_lines": 294,
+          "tokens": 11999
+        },
+        {
+          "run_id": 39097674723,
+          "workflow": "tests",
+          "raw_lines": 49693,
+          "kept_lines": 203,
+          "tokens": 11961
+        },
+        {
+          "run_id": 39051653412,
+          "workflow": "Redis and Redis Cluster",
+          "raw_lines": 7753,
+          "kept_lines": 287,
+          "tokens": 11959
+        },
+        {
+          "run_id": 39051653359,
+          "workflow": "tests",
+          "raw_lines": 47465,
+          "kept_lines": 283,
+          "tokens": 11970
+        }
+      ],
+      "workflows": [
+        "Redis and Redis Cluster",
+        "databases",
+        "facades",
+        "queues",
+        "static analysis",
+        "tests"
+      ],
+      "median_lines": 47971,
+      "min_lines": 7753,
+      "max_lines_seen": 49693,
+      "median_coverage": 0.006,
+      "under_threshold": 1,
+      "distinct_workflows_sampled": 2,
+      "verdict": "too large"
+    },
+    {
+      "repository": "micronaut-projects/micronaut-core",
+      "error": null,
+      "failed_runs_available": 100,
+      "real_runs_available": 91,
+      "logs_sampled": 4,
+      "lines": [
+        {
+          "run_id": 39114936816,
+          "workflow": "Java CI",
+          "raw_lines": 53944,
+          "kept_lines": 267,
+          "tokens": 11955
+        },
+        {
+          "run_id": 39114932454,
+          "workflow": "Java CI",
+          "raw_lines": 60394,
+          "kept_lines": 254,
+          "tokens": 11996
+        },
+        {
+          "run_id": 39060878895,
+          "workflow": "Java CI",
+          "raw_lines": 48682,
+          "kept_lines": 276,
+          "tokens": 11981
+        },
+        {
+          "run_id": 39058825610,
+          "workflow": "Java CI",
+          "raw_lines": 53205,
+          "kept_lines": 248,
+          "tokens": 11898
+        }
+      ],
+      "workflows": [
+        "Corretto CI",
+        "Java CI",
+        "Release"
+      ],
+      "median_lines": 53574,
+      "min_lines": 48682,
+      "max_lines_seen": 60394,
+      "median_coverage": 0.0048,
+      "under_threshold": 0,
+      "distinct_workflows_sampled": 1,
+      "verdict": "too large"
+    },
+    {
+      "repository": "rust-lang/cargo",
+      "error": null,
+      "failed_runs_available": 100,
+      "real_runs_available": 87,
+      "logs_sampled": 4,
+      "lines": [
+        {
+          "run_id": 39027134731,
+          "workflow": "CI",
+          "raw_lines": 58970,
+          "kept_lines": 328,
+          "tokens": 11990
+        },
+        {
+          "run_id": 38945039911,
+          "workflow": "CI",
+          "raw_lines": 58979,
+          "kept_lines": 328,
+          "tokens": 11961
+        },
+        {
+          "run_id": 38845066201,
+          "workflow": "CI",
+          "raw_lines": 87808,
+          "kept_lines": 321,
+          "tokens": 11973
+        },
+        {
+          "run_id": 38844422441,
+          "workflow": "CI",
+          "raw_lines": 27718,
+          "kept_lines": 311,
+          "tokens": 11990
+        }
+      ],
+      "workflows": [
+        "CI",
+        "Crabwatch"
+      ],
+      "median_lines": 58974,
+      "min_lines": 27718,
+      "max_lines_seen": 87808,
+      "median_coverage": 0.0056,
+      "under_threshold": 1,
+      "distinct_workflows_sampled": 1,
+      "verdict": "too large"
+    },
+    {
+      "repository": "prometheus/prometheus",
+      "error": null,
+      "failed_runs_available": 100,
+      "real_runs_available": 81,
+      "logs_sampled": 4,
+      "lines": [
+        {
+          "run_id": 39104566012,
+          "workflow": "CI",
+          "raw_lines": 90745,
+          "kept_lines": 270,
+          "tokens": 11974
+        },
+        {
+          "run_id": 39086560659,
+          "workflow": "CI",
+          "raw_lines": 89256,
+          "kept_lines": 289,
+          "tokens": 11991
+        },
+        {
+          "run_id": 39023320678,
+          "workflow": "CI",
+          "raw_lines": 89697,
+          "kept_lines": 289,
+          "tokens": 11990
+        },
+        {
+          "run_id": 39011257991,
+          "workflow": "CI",
+          "raw_lines": 91058,
+          "kept_lines": 288,
+          "tokens": 11992
+        }
+      ],
+      "workflows": [
+        "CI",
+        "Check release notes",
+        "govulncheck"
+      ],
+      "median_lines": 90221,
+      "min_lines": 89256,
+      "max_lines_seen": 91058,
+      "median_coverage": 0.0032,
+      "under_threshold": 0,
+      "distinct_workflows_sampled": 1,
+      "verdict": "too large"
+    },
+    {
+      "repository": "tokio-rs/tokio",
+      "error": null,
+      "failed_runs_available": 100,
+      "real_runs_available": 100,
+      "logs_sampled": 4,
+      "lines": [
+        {
+          "run_id": 39004598992,
+          "workflow": "CI",
+          "raw_lines": 541070,
+          "kept_lines": 191,
+          "tokens": 11968
+        },
+        {
+          "run_id": 38627550861,
+          "workflow": "CI",
+          "raw_lines": 522961,
+          "kept_lines": 317,
+          "tokens": 11965
+        },
+        {
+          "run_id": 38564226932,
+          "workflow": "CI",
+          "raw_lines": 5946,
+          "kept_lines": 266,
+          "tokens": 11974
+        },
+        {
+          "run_id": 38523951228,
+          "workflow": "CI",
+          "raw_lines": 536602,
+          "kept_lines": 291,
+          "tokens": 11956
+        }
+      ],
+      "workflows": [
+        "CI",
+        "Loom",
+        "Pull Request Security Audit",
+        "Stress Test"
+      ],
+      "median_lines": 529781,
+      "min_lines": 5946,
+      "max_lines_seen": 541070,
+      "median_coverage": 0.0006,
+      "under_threshold": 1,
+      "distinct_workflows_sampled": 1,
+      "verdict": "too large"
+    },
+    {
+      "repository": "apache/dubbo",
+      "error": null,
+      "failed_runs_available": 100,
+      "real_runs_available": 93,
+      "logs_sampled": 4,
+      "lines": [
+        {
+          "run_id": 38945755208,
+          "workflow": "Build and Test Scheduled On 3.3",
+          "raw_lines": 3514718,
+          "kept_lines": 258,
+          "tokens": 11954
+        },
+        {
+          "run_id": 38901880155,
+          "workflow": "Build and Test For PR",
+          "raw_lines": 875634,
+          "kept_lines": 225,
+          "tokens": 11883
+        },
+        {
+          "run_id": 38860626846,
+          "workflow": "Build and Test Scheduled On 3.3",
+          "raw_lines": 3510319,
+          "kept_lines": 235,
+          "tokens": 11990
+        },
+        {
+          "run_id": 38733604646,
+          "workflow": "Build and Test Scheduled On 3.3",
+          "raw_lines": 3440600,
+          "kept_lines": 260,
+          "tokens": 11983
+        }
+      ],
+      "workflows": [
+        "Build and Test For PR",
+        "Build and Test Scheduled On 3.3"
+      ],
+      "median_lines": 3475459,
+      "min_lines": 875634,
+      "max_lines_seen": 3514718,
+      "median_coverage": 0.0001,
+      "under_threshold": 0,
+      "distinct_workflows_sampled": 2,
+      "verdict": "too large"
+    }
+  ]
+}

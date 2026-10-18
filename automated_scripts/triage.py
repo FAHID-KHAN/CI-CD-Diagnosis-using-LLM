@@ -24,7 +24,7 @@ from automated_scripts.study_utils import (
 )
 from src.evaluation.case_partitions import load_exclusions
 from src.evaluation.failure_families import assign_families, family_report
-from src.evaluation.job_scope import classify_job, is_bot_run, is_excluded
+from src.evaluation.job_scope import classify_job, is_bot_run, is_excluded, is_umbrella_job
 
 SKIP_PATTERNS = [
     r"The operation was canceled",
@@ -125,6 +125,20 @@ def triage_logs(
                     log,
                     "out_of_scope_job",
                     job_scope=classify_job(failing_job, failing_step),
+                    failing_job=failing_job,
+                    failing_step=failing_step,
+                )
+            )
+            continue
+        # An umbrella job reports many independent failures under one job name,
+        # so it has no single root cause to diagnose and no unambiguous ground
+        # truth. Checked after the scope buckets because such a job is usually
+        # named like a legitimate build or test job.
+        if is_umbrella_job(failing_job):
+            excluded.append(
+                exclusion_record(
+                    log,
+                    "umbrella_job",
                     failing_job=failing_job,
                     failing_step=failing_step,
                 )

@@ -158,11 +158,14 @@ The pairs that genuinely overlap. Each needs a rule, not a preference.
 
 ### `test_failure` versus `build_configuration`
 
-**The live disagreement.** Four django `Run Quality Checks on a PR` cases are
-labelled `test_failure` in the ground truth; the hosted model answered
-`build_configuration` on all four with their evidence fully preserved. Until
-this rule is written, there is no basis for saying which is correct.
+**Resolved by scope, 18 October 2026.** Four django `Run Quality Checks on a PR`
+cases were labelled `test_failure` while both models answered
+`build_configuration`. Reading the evidence showed the job to be a script
+validating pull-request metadata: no build ran and no test executed. The cases
+were out of scope, and django was replaced by scrapy/scrapy. Neither category
+fitted, so the disagreement was not a definitional one.
 
+The rule is still needed for cases that genuinely sit between the two.
 Question to settle: does a check script that exits non-zero without executing a
 test suite constitute a test failure?
 

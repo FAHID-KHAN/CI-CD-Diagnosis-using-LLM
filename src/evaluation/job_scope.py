@@ -34,7 +34,15 @@ BOT_MARKERS: Tuple[str, ...] = (
     "pre-commit.ci",
     "dependency submission",
     "dependency-submission",
+    "dependency graph",
     "code scanning",
+    # Maintenance automation observed in the gradle cohort, where five such runs
+    # reached an eligible cohort: a Copilot review job, a dependency-graph
+    # submission, two scheduled bucket updaters and a wrapper upgrade. None is a
+    # human change to the code under test.
+    "copilot",
+    "auto update",
+    "upgrade to latest",
 )
 
 BOT_ACTORS: Tuple[str, ...] = ("dependabot", "renovate", "github-actions")
@@ -51,6 +59,38 @@ def is_bot_run(run: dict) -> bool:
     if any(marker in job for marker in BOT_MARKERS):
         return True
     return any(marker in login.lower() for marker in BOT_ACTORS)
+
+
+# An umbrella job runs many independent units of work and reports them under one
+# job name. It is excluded because it is not one diagnosable failure: a run where
+# sixteen unrelated module test suites executed has no single root cause, so the
+# ground truth would be ambiguous to a human annotator as well as to a model.
+# This is the same reasoning recorded in ``_job_step_key`` in failure_families.py.
+#
+# Measured on the gradle cohort: all 25 cases over 40,000 log lines were umbrella
+# jobs and all 11 single-purpose jobs were under it, so excluding these also
+# removes every case whose evidence the filter cannot reach. The exclusion is on
+# construct validity and evidence availability, never on model performance.
+UMBRELLA_MODULE_COUNT = 4
+
+# Aggregate wrappers a human has inspected and judged umbrella. The command a job
+# runs is not exposed by the runs API, so a wrapper that fans out internally --
+# gradle's ``sanityCheck`` runs many unrelated checks under one innocuous name --
+# cannot be detected from the name alone and has to be listed. Each entry is a
+# recorded scope judgement; add one only after reading the log.
+UMBRELLA_JOB_NAMES: Tuple[str, ...] = ("sanity check",)
+
+
+def is_umbrella_job(job_name: str) -> bool:
+    """True when a failing job aggregates many independent units of work."""
+    name = (job_name or "").strip().lower()
+    if not name:
+        return False
+    if any(known in name for known in UMBRELLA_JOB_NAMES):
+        return True
+    # A job that enumerates its modules in its own name, as gradle's matrix jobs
+    # do ("antlr, build-cache-local, build-profile, ... (Unit Test)").
+    return len([part for part in name.split(",") if part.strip()]) >= UMBRELLA_MODULE_COUNT
 
 
 IN_SCOPE = "build_test"

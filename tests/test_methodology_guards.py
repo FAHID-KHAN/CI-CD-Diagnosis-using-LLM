@@ -13,6 +13,7 @@ from src.evaluation.category_metrics import (
     macro_f1,
 )
 from src.evaluation.ground_truth_audit import audit_annotations, audit_ground_truth_file, root_cause_problem
+from src.evaluation.job_scope import is_bot_run, is_in_scope, is_umbrella_job
 
 # ── D4: development and pilot cases must not reach the held-out set ────────
 
@@ -1220,3 +1221,55 @@ def test_aggregate_evidence_lines_averages_only_scorable_cases():
     summary = aggregate_evidence_lines(cases)
     assert summary["scorable_cases"] == 2
     assert summary["mean_f1"] == 0.5
+
+
+# ── Scope: an umbrella job has no single root cause to diagnose ────────────
+
+
+def test_an_umbrella_job_listing_many_modules_is_out_of_scope():
+    """A run where sixteen unrelated module suites executed has no one root cause.
+
+    Admitting it would mean annotating ambiguous ground truth, and scoring a
+    model against a question that is not well posed.
+    """
+    job = (
+        "antlr, build-cache-local, build-profile, concurrent, declarative-dsl-core, "
+        "file-collections, ide-model-impls, internal-testing (Unit Test)"
+    )
+    assert is_umbrella_job(job) is True
+
+
+def test_an_inspected_aggregate_wrapper_is_out_of_scope():
+    """gradle's sanityCheck fans out internally, which its job name does not reveal."""
+    assert is_umbrella_job("Sanity Check on Linux") is True
+    assert is_in_scope("Sanity Check on Linux", "Run ./gradlew sanityCheck") is True, (
+        "the scope buckets read this as a legitimate check job, which is why the "
+        "umbrella rule has to be applied separately in triage"
+    )
+
+
+def test_a_single_purpose_job_stays_in_scope():
+    for job in ("Compile All", "Run tests", "antlr:test", "build, test"):
+        assert is_umbrella_job(job) is False, job
+
+
+def test_a_missing_job_name_is_not_treated_as_umbrella():
+    """An unrecorded job name is a reason to inspect, not to discard."""
+    assert is_umbrella_job("") is False
+    assert is_umbrella_job(None) is False
+
+
+def test_maintenance_automation_is_recognised_as_a_bot_run():
+    """Five such runs reached an eligible gradle cohort before these markers existed."""
+    for workflow in (
+        "Submit Dependency Graph",
+        "Running Copilot Code Review",
+        "Auto update test buckets",
+        "Auto update performance test buckets",
+        "Upgrade to latest wrapper",
+    ):
+        assert is_bot_run({"workflow_name": workflow}) is True, workflow
+
+
+def test_a_human_build_failure_is_not_a_bot_run():
+    assert is_bot_run({"workflow_name": "Contributor CI Build", "failing_job": "Compile All"}) is False

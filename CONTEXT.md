@@ -24,7 +24,7 @@ Supervisors: Jussi Rasku, Md Mahade Hasan. Thesis seminar: 9 November 2026.
 | --- | --- |
 | Code | Complete. 70 tests, lint and type checks pass. |
 | Study data | `thesis_pair_2026`: 179 raw, 56 eligible, 27 annotated, split written. Four development runs in `experiments/`. |
-| Active config | `configs/thesis_pair_2026.yaml` — django/django and gradle/gradle |
+| Active config | `configs/thesis_gradle_scrapy_2026.yaml` — gradle/gradle and scrapy/scrapy |
 | Blocked on | Supervisor approval of the evaluation method |
 
 Check the live state at any time:
@@ -246,6 +246,55 @@ sixteen cases, at USD 0 against USD 0.46.
   median until Dependabot runs were excluded; its real CI failures are 28,235
   lines.
 
+## django/django was replaced by scrapy/scrapy
+
+Decided 18 October 2026. The evaluation plan §3.1 requires the retention or
+replacement of a repository to be explained; this is that explanation.
+
+**Why django failed.** Fifteen of its eighteen eligible cases came from one job,
+`Run Quality Checks on a PR`. Reading the annotated evidence showed what these
+are: `scripts/pr_quality/check_pr.py` validating pull-request metadata -- a
+malformed Trac ticket reference, an AI disclosure reading only "Claude", a
+ticket not yet Accepted. No build ran and no test executed. They are
+administrative checks of the same class as `check-commit-suffix`, which triage
+already excludes, and were admitted only because the job name contains the word
+"check". Excluding them leaves django with roughly three cases.
+
+This also resolved the `test_failure` / `build_configuration` dispute. Both
+models answered `build_configuration` on those four cases while the ground truth
+said `test_failure`; neither category fits a metadata validation script. The
+disagreement was an artefact of forcing an out-of-scope case into a category,
+not a defect in either model or in the codebook.
+
+**Repository assessment, 18 October 2026** (30 inspected failures each):
+
+| Repository | In scope | Repair-linked | Families |
+| --- | ---: | ---: | ---: |
+| pytest-dev/pytest | 26/30 | 15/30 | 27 |
+| scrapy/scrapy | 23/30 | 18/30 | 25 |
+| sveltejs/svelte | 21/30 | 10/30 | 24 |
+| pandas-dev/pandas | 14/30 | 10/30 | 21 |
+| gradle/gradle | 14/30 | 14/30 | 11 |
+| django/django | 9/30 | 22/30 | 3 |
+
+scrapy was chosen over pytest-dev/pytest despite a lower in-scope rate, on
+repair traceability: 18 of 30 against 15. That figure determines how much of the
+ground truth can rest on a documented repair rather than on expert judgement,
+which is the concern both supervisors raised. pandas was excluded because four
+of its in-scope cases are `Type Checking` jobs, the same lint-adjacent category
+that sank django. The svelte figure quoted earlier in this project (20/30
+repair-linked) predates the bot-filter change and should be disregarded.
+
+**What this does not fix.** scrapy's failures are overwhelmingly `Run tests`, so
+the category skew remains: 20 of 27 annotated cases were already
+`test_failure`. Controlled defects are still required for category coverage.
+
+**Carried forward.** The 11 gradle annotations are preserved and can be moved
+into the new cohort by log checksum with
+`tools/carry_over_annotations.py`. The 16 django annotations are not carried:
+those cases are out of scope. `thesis_pair_2026` is retained as the record of
+the django attempt.
+
 ## The codebook
 
 `docs/thesis/CODEBOOK.md` exists as a skeleton with 34 `TO WRITE` markers. The
@@ -258,11 +307,10 @@ without written rules it measures only whether two people think alike. A second
 reviewer cannot begin without it, per Mahade's Q3. And it is the only way to
 settle disagreements of definition rather than of judgement.
 
-**This is now the blocking item.** Nine of the sixteen development cases hinge
-on the `test_failure` / `build_configuration` rule. Until it is written, a model
-error cannot be told apart from a disagreement about definitions, and no
-development result means anything. The filter, the completion budget and the
-failure capture are all fixed and recorded; this is what remains.
+**Largely resolved by replacing django.** The nine development cases that hinged
+on the `test_failure` / `build_configuration` rule were the out-of-scope
+`Run Quality Checks on a PR` cases. The tie-break still needs writing, but it no
+longer blocks a development result.
 
 **The live case.** Four django `Run Quality Checks on a PR` failures are
 labelled `test_failure` in the ground truth; the hosted model answered
@@ -274,6 +322,152 @@ no written answer yet, so neither label can be called correct. The same four
 cases are also the `Run Quality Checks on a PR` job whose scope has been in
 doubt since the repository assessment.
 
+## The preprocessing boundary, and what it costs
+
+Measured 18 October 2026 on the 27 annotated cases of `thesis_pair_2026`, and
+on the 78-case `thesis_gradle_scrapy_2026` cohort. These numbers decide whether
+gradle can serve as a repository arm, so they are recorded in full.
+
+**Preprocessing recall splits cleanly at roughly 40,000 log lines.**
+
+| raw log lines | cases | lost all evidence | mean recall |
+| --- | --- | --- | --- |
+| under 40k | 22 | 0 (0%) | 74% |
+| over 40k | 5 | 5 (100%) | 0% |
+
+Not a gradient -- a wall. Every case below the threshold retained some verified
+evidence; every case above it retained none. `lost_at` attributes three of the
+five to `line_cap` and two to `keyword_window`.
+
+**The budget cannot be raised.** The local model's context is the binding
+constraint on what *both* models see:
+
+```
+local context          24,576
+completion reserve     -7,168
+available for prompt   17,408
+largest prompt observed 16,923
+headroom                   485 tokens
+```
+
+Raising `max_tokens` on the filter breaks the local condition. Raising it for
+the hosted model alone would mean the two conditions no longer receive the same
+input, which ends the controlled comparison. A deployable pipeline has one
+preprocessing configuration and ours is sized to the smaller model. This belongs
+in the thesis as a stated scoping decision, not in limitations -- a reader will
+otherwise ask why the hosted model was not given the whole log.
+
+**Section scoping was tried and does not work.** Large gradle logs are
+26-section archives and the evidence does sit in only two or three sections, so
+restricting the filter to them looked promising. It was tested two ways against
+the five large-log cases: scoping to the sections whose name matches
+`failing_job` recovered evidence in 1 of 5 (mean recall 4%), and ranking
+sections by error-keyword density and filling the line budget recovered none.
+The sections are themselves 3,000-11,000 lines of keyword-dense test output, so
+the 500-line cap still crowds the evidence out. Recorded so it is not retried.
+
+**The boundary is an umbrella-job effect, not a repository effect.** Within
+gradle the separation is total:
+
+| gradle failing job | cases | median lines | over 40k |
+| --- | --- | --- | --- |
+| umbrella / aggregate | 25 | 43,426 | 25 |
+| single-purpose | 11 | 2,413 | 0 |
+
+The 25 are `Sanity Check on Linux` (18) and a 16-module `(Unit Test)` aggregate
+(7). An umbrella job is not one diagnosable failure -- it is many independent
+failures reported under one job name, which is the same reasoning already
+recorded in `_job_step_key` in `src/evaluation/failure_families.py`. Asking for
+*the* root cause of such a run is not well posed, so the ground truth would be
+ambiguous even to a human annotator. This is a construct-validity argument, and
+excluding on it is selection on evidence availability, which the methodology
+permits; selection by model performance it is not.
+
+**What is left of gradle is too thin for a repository arm.** Of the 11
+single-purpose cases, five are maintenance or bot workflows that triage did not
+catch -- `Upgrade to latest wrapper`, `Auto update performance test buckets`,
+`Auto update test buckets`, `Submit Dependency Graph`, `Running Copilot Code
+Review`. `is_bot_run` returned `False` for all five -- `BOT_MARKERS` carried
+`"dependency submission"` but the workflow is named `Submit Dependency Graph`,
+and nothing matched the Copilot reviewer. Markers for all five were added on
+18 October 2026, so a future cohort excludes them. That leaves four `Compile All` cases
+and two `Contributor CI Build` cases with no `failing_job` recorded: **about six
+genuinely diagnosable gradle cases.** Six is an anecdote, not an arm.
+
+**The split would concentrate the loss in held-out.** Previewed read-only with
+`allocate(..., rule="combined", seed=20261010)`, no manifest written:
+
+| partition | n | over 40k | usable | usable gradle |
+| --- | --- | --- | --- | --- |
+| development | 16 | 5 | 11 | 2 |
+| pilot | 16 | 3 | 13 | 4 |
+| held_out | 46 | 17 | 29 | 5 |
+
+The held-out set runs once. Twenty-four of its 29 usable cases are scrapy, so as
+it stands the single confirmatory run would be a scrapy study with five gradle
+cases attached.
+
+**Analysis decision to pre-register before annotating.** Report accuracy
+stratified: primary on cases where preprocessing recall > 0, which is where the
+model was actually given the evidence and so is what measures the models; and
+preprocessing recall across the whole cohort as a separate result, which is what
+measures the pipeline. Both always reported together. Fixing this now, before
+any model has run on this cohort, is what separates it from choosing the
+flattering subset after the fact.
+
+## Candidate repositories for the gradle replacement
+
+Measured 18 October 2026 with `tools/scout_repositories.py`, four sampled failed
+runs per repository across fifteen candidates in six ecosystems. Raw
+measurements: `docs/thesis/measurements/repository_scout_2026-10-18.json`.
+No model was run and nothing here looks at model output.
+
+**Three "tractable" verdicts were artifacts and the scout cannot see why.** It
+samples by recency and reports the workflow name, so a repository whose recent
+failures are maintenance automation looks small:
+
+| repository | median | what was actually sampled |
+| --- | --- | --- |
+| babel/babel | 60 | 3 of 4 were `Lock Threads`, an issue-locking bot; its real CI run was 13,355 lines |
+| etcd-io/etcd | 285 | all 4 were `Measure TestGrid Flakiness`, a scheduled measurement, not a fault |
+| netty/netty | 168 | 3 of 4 were `PR Reports`; the one real `Build PR` was **1,324,878 lines** |
+
+This is the django lesson again -- a short median meant administrative jobs, not
+tractable ones. `is_bot_run` catches neither `Lock Threads` nor
+`Measure TestGrid Flakiness`; both are candidates for `BOT_MARKERS` if either
+repository is ever reconsidered.
+
+**No JVM candidate is tractable.** netty 1.3M lines, apache/dubbo 3.5M,
+micronaut-core 53,574, mockito 26,650 and most of its logs already expired.
+Large JVM projects build and test every module in one job, which is the same
+umbrella structure that made gradle unusable. Worth stating in the thesis: the
+exclusion is not about gradle specifically but about how JVM monorepo CI
+reports, and it is why the ecosystem contrast cannot be python-versus-jvm.
+
+**Two candidates hold up.** Their sampled logs are genuine CI runs, and 28
+inspected failed runs each contained no bot runs and no umbrella jobs:
+
+| repository | real failed runs | median lines | tokens kept | filter saturated | in-scope jobs |
+| --- | --- | --- | --- | --- | --- |
+| vitejs/vite | 100 | 4,723 | 2,453-3,480 | no | 24 of 28 |
+| sveltejs/svelte | 94 | 3,626 | 1,641-3,773 | no | 21 of 28 |
+
+The unsaturated filter is the column that matters. Both stay well inside the
+12,000-token budget, so the model receives the whole filtered selection and the
+measurement tests the model rather than the filter -- the opposite of gradle,
+and unlike vuejs/core, hugo, symfony and mockito, which all saturate at ~11,990
+tokens. Non-in-scope jobs in both are `Lint`, which triage already excludes.
+
+Both run matrix jobs (`Build&Test: node-24, windows-latest`, `Tests (20,
+macOS-latest)`), so one fault surfaces across several matrix entries and family
+grouping will collapse them. Distinct-family yield per raw run is therefore
+unknown until a collection pass runs, and is probably lower than scrapy's.
+
+The ecosystem contrast becomes Python versus JavaScript rather than Python
+versus JVM. Caveat on the numbers: four sampled logs per repository for sizes
+and 28 inspected runs for job names. Thin, but it is a tractability decision,
+which is what the methodology permits selecting on.
+
 ## Open decisions
 
 Six, listed in `docs/thesis/EVALUATION_PLAN.md` §10. The ones that block
@@ -282,6 +476,20 @@ annotation:
 - Keep eight failure categories and widen the data, or cut the categories down.
 - Score root-cause correctness with a rubric, or narrow the primary research
   question to categories and evidence lines.
+- **What happens to gradle.** Its umbrella jobs are undiagnosable by this
+  pipeline and excluding them leaves about six usable cases, so the
+  cross-repository comparison cannot rest on it as collected. Either replace it
+  with another repository, or drop the cross-repository dimension and report
+  gradle as a documented boundary. No JVM candidate measured tractable, so a
+  replacement means accepting a Python-versus-JavaScript contrast; see the
+  preprocessing boundary and candidate sections above for the numbers.
+- **Whether to re-triage `thesis_gradle_scrapy_2026`.** The two rules it would
+  apply now exist -- `is_umbrella_job` in `src/evaluation/job_scope.py`, and
+  `BOT_MARKERS` entries for the five maintenance workflows that slipped through.
+  Triage is offline and re-runnable from the raw logs, so this touches no config
+  and no collection manifest. It is probably not worth doing on this cohort,
+  because replacing gradle means collecting a new one; the rules matter for the
+  next collection, not this one.
 
 Two commitments made to supervisors that are not implemented: a **rule-based
 baseline**, and **root-cause / suggested-fix quality scoring**.

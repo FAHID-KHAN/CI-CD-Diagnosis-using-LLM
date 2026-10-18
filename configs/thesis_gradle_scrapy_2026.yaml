@@ -1,0 +1,86 @@
+# Two-repository protocol for the held-out thesis evaluation (kickoff decision D2).
+#
+# A new study_id rather than an edit to thesis_pair_2026: collection is
+# immutable and the manifests record the config checksum that produced them, so
+# changing the pair in place would break the provenance of the earlier cohort.
+# thesis_pair_2026 is retained as the record of the django attempt.
+#
+# Pair rationale. gradle/gradle contributes JVM build and test failures via the
+# Gradle build tool; scrapy/scrapy contributes Python test failures via pytest.
+# They contrast on language, build tool, test framework and log convention.
+#
+# Why django/django was replaced (plan §3.1 requires this to be explained).
+# Fifteen of its eighteen eligible cases came from one job, "Run Quality Checks
+# on a PR". Inspecting the annotated evidence showed these to be a script
+# validating pull-request metadata -- a malformed Trac ticket reference, an AI
+# disclosure reading only "Claude", a ticket not yet Accepted. No build ran and
+# no test executed. They are administrative checks of the same class as
+# check-commit-suffix, which triage already excludes, and were admitted only
+# because the job name contains the word "check". Excluding them leaves django
+# with roughly three cases, which is not a viable contribution.
+#
+# Repository assessment, 18 October 2026 (tools/check_repository_gate.py,
+# 30 inspected failures per repository):
+#
+#   repository        in scope   repair-linked   families
+#   gradle/gradle        14/30          14/30         11
+#   scrapy/scrapy        23/30          18/30         25
+#   django/django         9/30          22/30          3   <- replaced
+#
+# scrapy was selected over sveltejs/svelte (21/30 in scope, 10/30 repair-linked)
+# and pytest-dev/pytest (26/30, 15/30) on repair traceability, which determines
+# how much of the ground truth can rest on a documented repair rather than on
+# expert judgement.
+#
+# Target arithmetic. Combined yield is roughly 0.42 distinct families per raw
+# run collected. GitHub's workflow-runs listing returns at most 100 entries per
+# request, so one pass over two repositories inspects at most 200 runs and
+# should produce in the region of 80 usable cases. scrapy additionally yields a
+# high proportion of runs where no job executed (22 of 52 inspected), which the
+# figure above already accounts for.
+#
+# The eligible range below is deliberately wide. A count far outside it means
+# the yield assumption no longer holds and should be re-examined rather than
+# absorbed silently.
+study_id: thesis_gradle_scrapy_2026
+title: Two-repository contrasting GitHub Actions failure dataset (JVM and Python)
+source: github_actions
+unit_of_analysis: failed_workflow_run
+sampling_method: latest_failed_runs_per_repository
+auto_discovery: false
+target_raw_logs: 200
+target_eligible_logs:
+  minimum: 35
+  maximum: 200
+
+repositories:
+  - name: gradle/gradle
+    max_logs: 100
+    ecosystem: jvm
+  - name: scrapy/scrapy
+    max_logs: 100
+    ecosystem: python
+
+eligibility:
+  required_conclusion: failure
+  minimum_log_lines: 20
+  maximum_duplicate_error_signatures_per_repository: 2
+  require_downloadable_log: true
+  family_rule: combined
+
+exclusions:
+  - cancelled_run
+  - token_error
+  - too_short
+  - duplicate_error
+  - duplicate_failure_family
+  - unavailable_log
+  - bot_generated_run
+  - no_job_executed
+  - out_of_scope_job
+
+research_controls:
+  use_fixed_repository_list: true
+  preserve_raw_logs: true
+  blind_annotation: true
+  do_not_tune_on_final_dataset: true
