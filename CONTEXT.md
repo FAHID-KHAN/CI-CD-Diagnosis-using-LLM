@@ -23,7 +23,7 @@ Supervisors: Jussi Rasku, Md Mahade Hasan. Thesis seminar: 9 November 2026.
 | | |
 | --- | --- |
 | Code | Complete. 70 tests, lint and type checks pass. |
-| Study data | `thesis_pair_2026`: 179 raw, 56 eligible, 27 annotated, split written. |
+| Study data | `thesis_pair_2026`: 179 raw, 56 eligible, 27 annotated, split written. Four development runs in `experiments/`. |
 | Active config | `configs/thesis_pair_2026.yaml` — django/django and gradle/gradle |
 | Blocked on | Supervisor approval of the evaluation method |
 
@@ -165,6 +165,33 @@ freeze record and the methods chapter.
 **Cost and time.** Proprietary: 19.4 s and USD 0.038 per case. Open-weights:
 17.4 minutes per case, no API cost. A 26-case cohort means roughly 7 hours of
 local inference.
+
+**The open-weights condition truncates before it answers.** Diagnosed on the
+development partition, 17 October 2026 (`experiments/dev_002_local`). Five of
+sixteen inferences failed, and the captured responses show one cause with no
+ambiguity:
+
+| | |
+| --- | --- |
+| `finish_reason` | `length` on all five |
+| Completion tokens | exactly 4,096 on all five |
+| Response characters | 0 on all five |
+
+Qwen 3.5 is a reasoning model: it spends completion budget thinking before
+emitting any JSON, and on these cases it consumed the whole allowance and
+returned nothing. The parse error (`Expecting value: line 1 column 1`) was an
+empty string, not malformed output.
+
+This is configuration, not model quality. `max_tokens` is 4,096 while the model
+has a 24,576-token context and these prompts occupied 16,137 to 16,923 tokens,
+leaving roughly 7,600 tokens of headroom. Successful calls were observed using
+up to 4,441 completion tokens, which is why some completed and others were cut
+off. **Until this is raised, any comparison understates the open-weights
+condition**, because five of its sixteen cases never got to answer.
+
+Found only because failed inferences now store the raw response,
+`finish_reason` and token usage. Before that change a failure recorded only its
+error string and could not be explained.
 
 ## Things that surprised us
 
