@@ -22,9 +22,10 @@ Supervisors: Jussi Rasku, Md Mahade Hasan. Thesis seminar: 9 November 2026.
 
 | | |
 | --- | --- |
-| Code | Complete. 70 tests, lint and type checks pass. |
-| Study data | `thesis_pair_2026`: 179 raw, 56 eligible, 27 annotated, split written. Four development runs in `experiments/`. |
-| Active config | `configs/thesis_gradle_scrapy_2026.yaml` — gradle/gradle and scrapy/scrapy |
+| Code | Complete. 143 tests, lint and type checks pass. |
+| Study data | `thesis_pair_2026`: 179 raw, 56 eligible, 27 annotated, split written. Four development runs in `experiments/`. `thesis_gradle_scrapy_2026`: 138 raw, 78 eligible, superseded -- gradle was replaced, so this cohort is not the study cohort. |
+| Repositories | scrapy/scrapy and vitejs/vite, decided 18 October 2026 |
+| Active config | None. The gradle/scrapy config is superseded; the scrapy/vite config is not written yet. |
 | Blocked on | Supervisor approval of the evaluation method |
 
 Check the live state at any time:
@@ -444,7 +445,8 @@ umbrella structure that made gradle unusable. Worth stating in the thesis: the
 exclusion is not about gradle specifically but about how JVM monorepo CI
 reports, and it is why the ecosystem contrast cannot be python-versus-jvm.
 
-**Two candidates hold up.** Their sampled logs are genuine CI runs, and 28
+**Two candidates hold up**, and vitejs/vite was chosen -- see the decision
+record below. Their sampled logs are genuine CI runs, and 28
 inspected failed runs each contained no bot runs and no umbrella jobs:
 
 | repository | real failed runs | median lines | tokens kept | filter saturated | in-scope jobs |
@@ -468,6 +470,59 @@ versus JVM. Caveat on the numbers: four sampled logs per repository for sizes
 and 28 inspected runs for job names. Thin, but it is a tractability decision,
 which is what the methodology permits selecting on.
 
+## gradle/gradle was replaced by vitejs/vite
+
+Decided 18 October 2026, on the measurements in the two sections above.
+Evaluation plan §3.1 requires a repository replacement to be explained; this is
+that explanation. The study repositories are now **scrapy/scrapy** and
+**vitejs/vite**.
+
+**Why gradle failed.** Twenty-five of its 36 eligible cases were umbrella jobs
+-- `Sanity Check on Linux` and a sixteen-module `(Unit Test)` aggregate -- which
+report many independent failures under one job name and so have no single root
+cause to annotate. All 25 were over 40,000 log lines and lost every verified
+evidence line in filtering; all 11 single-purpose jobs were under it and lost
+none. Excluding umbrella jobs leaves about six genuinely diagnosable gradle
+cases, which is an anecdote rather than a repository arm.
+
+**Why the replacement is not JVM.** Five JVM candidates were measured and none
+is tractable: netty/netty 1,324,878 lines on its one real `Build PR` sample,
+apache/dubbo 3.5M, micronaut-core 53,574, mockito/mockito 26,650 with most logs
+already expired. Large JVM projects build and test every module in one job,
+which is the same structure that made gradle unusable. The ecosystem contrast is
+therefore Python versus JavaScript. This is a finding to report rather than a
+compromise to apologise for: it is measured across five projects and it bounds
+where the artifact applies.
+
+**Why vite.** Its sampled logs stay inside the token budget (2,453-3,480 tokens
+kept against a 12,000 budget), so the filter does not saturate and the model
+receives the whole filtered selection -- the measurement tests the model rather
+than the filter. Of 28 inspected failed runs, none was a bot run and none was an
+umbrella job; 24 were in scope and the other four were `Lint`, which triage
+already excludes.
+
+**Yield, measured rather than assumed.** The concern was that matrix jobs
+(`Build&Test: node-24, windows-latest`) would make one fault surface repeatedly
+and be collapsed by family grouping. It does not happen, for two reasons: matrix
+entries are jobs within a single run rather than separate runs, so one run
+contributes one case whatever the matrix width; and fault diversity is high --
+84 distinct commits across 100 failed runs, against scrapy's 73. Of 24 inspected
+runs, 20 were in scope with a downloadable log and all 20 had **distinct** error
+signatures, so the duplicate cap removed nothing. That is 0.83 cases per raw run
+inspected, against the 0.42 assumed for gradle and scrapy combined.
+
+Signature distinctness was checked for the opposite failure as well -- a
+signature sensitive to volatile content would under-deduplicate and admit real
+duplicates. `compute_error_signature` strips ISO timestamps, ANSI codes and hex
+addresses, and the commit-distinctness figures above account for the result, so
+20 of 20 is genuine diversity.
+
+**What this does not settle.** Four sampled logs per repository for sizes and 24
+to 28 inspected runs for jobs and signatures. Enough for a selection decision on
+tractability, which is the only basis the methodology permits, but the real
+distinct-family yield is known only after a collection pass. The nine gradle
+annotations that matched by checksum are discarded with gradle.
+
 ## Open decisions
 
 Six, listed in `docs/thesis/EVALUATION_PLAN.md` §10. The ones that block
@@ -476,13 +531,8 @@ annotation:
 - Keep eight failure categories and widen the data, or cut the categories down.
 - Score root-cause correctness with a rubric, or narrow the primary research
   question to categories and evidence lines.
-- **What happens to gradle.** Its umbrella jobs are undiagnosable by this
-  pipeline and excluding them leaves about six usable cases, so the
-  cross-repository comparison cannot rest on it as collected. Either replace it
-  with another repository, or drop the cross-repository dimension and report
-  gradle as a documented boundary. No JVM candidate measured tractable, so a
-  replacement means accepting a Python-versus-JavaScript contrast; see the
-  preprocessing boundary and candidate sections above for the numbers.
+- ~~What happens to gradle.~~ Settled 18 October 2026: replaced by
+  vitejs/vite. The next step is a new config and a fresh collection pass.
 - **Whether to re-triage `thesis_gradle_scrapy_2026`.** The two rules it would
   apply now exist -- `is_umbrella_job` in `src/evaluation/job_scope.py`, and
   `BOT_MARKERS` entries for the five maintenance workflows that slipped through.
