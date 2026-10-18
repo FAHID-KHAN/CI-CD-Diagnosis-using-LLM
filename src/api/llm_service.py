@@ -16,6 +16,22 @@ logger = logging.getLogger(__name__)
 MAX_LLM_RETRIES = 3
 LLM_BACKOFF = 2.0
 
+# Completion budget per condition.
+#
+# The hosted model emits its answer directly, so 4,096 tokens is ample.
+#
+# The open-weights condition is a reasoning model: it spends completion tokens
+# thinking before emitting any JSON. At 4,096 it exhausted the budget and
+# returned an empty string on 5 of 16 development cases -- finish_reason
+# "length", exactly 4,096 completion tokens, zero characters. Those inferences
+# counted as failures, so the condition was being measured with a handicap.
+#
+# Its model is built with a fixed 24,576-token context. Development prompts
+# occupied 16,137 to 16,923 tokens, so the budget below leaves headroom for the
+# largest observed prompt while using the capacity that was previously idle.
+HOSTED_MAX_TOKENS = 4096
+LOCAL_MAX_TOKENS = 7168
+
 # A 429 can mean "slow down" or "you have no quota". The first is transient and
 # worth retrying; the second will never succeed, so retrying it wastes time and
 # fills a run with identical failures instead of stopping.
@@ -94,12 +110,16 @@ class LLMDiagnoser:
         provider: LLMProvider,
         model: str,
         api_key: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         base_url: Optional[str] = None,
         reasoning_effort: str = "medium",
     ):
         self.provider = provider
         self.model = model
+        # Per-condition default; an explicit value still wins so the budget can
+        # be varied deliberately and recorded.
+        if max_tokens is None:
+            max_tokens = LOCAL_MAX_TOKENS if provider == LLMProvider.LOCAL else HOSTED_MAX_TOKENS
         self.max_tokens = max_tokens
         if reasoning_effort not in {"low", "medium", "high"}:
             raise ValueError("reasoning_effort must be one of: low, medium, high")

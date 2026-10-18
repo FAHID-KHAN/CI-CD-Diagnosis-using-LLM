@@ -193,6 +193,46 @@ Found only because failed inferences now store the raw response,
 `finish_reason` and token usage. Before that change a failure recorded only its
 error string and could not be explained.
 
+**Fixed, 18 October 2026.** The completion budget is now set per condition in
+`src/api/llm_service.py`: `HOSTED_MAX_TOKENS = 4096`, `LOCAL_MAX_TOKENS = 7168`.
+The local figure leaves headroom above the largest observed development prompt
+(16,923 tokens) within the fixed 24,576-token context. An explicit `max_tokens`
+still overrides it, so the budget can be varied deliberately and recorded.
+
+**Confirmed, 18 October 2026** (`experiments/dev_003_local`). All 16 cases
+completed, against 11 of 16 before. The largest completion was 6,523 tokens,
+which the previous 4,096 budget would have truncated. The run also took 1.6
+hours rather than 4.6: cases that previously burned the full budget before
+failing now finish.
+
+| | dev_002_local | dev_003_local |
+| --- | ---: | ---: |
+| Completed | 11 of 16 | 16 of 16 |
+| Total run time | ~4.6 h | 1.6 h |
+| Completion tokens (median / max) | — | 2,920 / 6,523 |
+
+**Its category accuracy is 0%, and that figure is not yet a measurement.** The
+prediction distribution against ground truth:
+
+| Category | Verified | Predicted |
+| --- | ---: | ---: |
+| test_failure | 9 | 1 |
+| build_configuration | 1 | 6 |
+| unknown | 0 | 6 |
+| permission_denied | 3 | 1 |
+| syntax_error | 1 | 0 |
+
+Two reasons to distrust it. Nine of the sixteen cases turn on the unwritten
+`test_failure` / `build_configuration` tie-break: both models disagree with the
+ground truth in the same direction, which more often indicates the labels than
+the models. And five cases still have no evidence surviving the filter, where
+`unknown` is the correct answer.
+
+What does hold up: the hosted condition answered 7 of 16 correctly against the
+local condition's 0, consistently across both runs. And the operational gap is
+real regardless of any label -- 1.6 hours against roughly 2 minutes for the same
+sixteen cases, at USD 0 against USD 0.46.
+
 ## Things that surprised us
 
 - **Cohorts cannot be re-collected.** GitHub drops a run from its failure
@@ -205,6 +245,34 @@ error string and could not be explained.
 - **Short logs are often bot-generated.** junit5 looked tractable at a 179-line
   median until Dependabot runs were excluded; its real CI failures are 28,235
   lines.
+
+## The codebook
+
+`docs/thesis/CODEBOOK.md` exists as a skeleton with 34 `TO WRITE` markers. The
+structure, the five overlapping category pairs and the worked examples drawn
+from the development set are prepared; the definitions are not written.
+
+It matters for three reasons beyond the plan requiring it (§3.5). Chance-
+corrected agreement measures whether two reviewers applied the same rules, so
+without written rules it measures only whether two people think alike. A second
+reviewer cannot begin without it, per Mahade's Q3. And it is the only way to
+settle disagreements of definition rather than of judgement.
+
+**This is now the blocking item.** Nine of the sixteen development cases hinge
+on the `test_failure` / `build_configuration` rule. Until it is written, a model
+error cannot be told apart from a disagreement about definitions, and no
+development result means anything. The filter, the completion budget and the
+failure capture are all fixed and recorded; this is what remains.
+
+**The live case.** Four django `Run Quality Checks on a PR` failures are
+labelled `test_failure` in the ground truth; the hosted model answered
+`build_configuration` on all four, with their evidence fully preserved through
+filtering (236-239 line logs). This is not a preprocessing problem and not
+obviously a model error. The question it turns on -- does a check script that
+exits non-zero without running a test suite constitute a test failure? -- has
+no written answer yet, so neither label can be called correct. The same four
+cases are also the `Run Quality Checks on a PR` job whose scope has been in
+doubt since the repository assessment.
 
 ## Open decisions
 
@@ -223,6 +291,7 @@ baseline**, and **root-cause / suggested-fix quality scoring**.
 | Path | What |
 | --- | --- |
 | `docs/thesis/ACTION_ITEMS.md` | What to do next, in order |
+| `docs/thesis/CODEBOOK.md` | Category rules. Skeleton; definitions not written |
 | `docs/thesis/SUPERVISOR_CONDITIONS.md` | Supervisor conditions and the response to each |
 | `docs/thesis/EVALUATION_PLAN.md` | The plan to send to supervisors |
 | `docs/architecture/CONTROLLED_STUDY_RUNBOOK.md` | Exact operating procedure |

@@ -742,6 +742,36 @@ def test_aggregate_preprocessing_recall_flags_total_evidence_loss():
     assert summary["mean_recall"] == pytest.approx(0.5, abs=0.001)
 
 
+# ── Completion budget: the open-weights condition needs room to answer ─────
+
+
+def test_the_local_condition_gets_a_larger_completion_budget():
+    """At 4,096 it exhausted the budget reasoning and returned nothing.
+
+    Measured on development: finish_reason 'length', exactly 4,096 completion
+    tokens and zero characters on 5 of 16 cases, so those inferences counted as
+    failures and the condition was measured with a handicap.
+    """
+    from src.api.llm_service import HOSTED_MAX_TOKENS, LOCAL_MAX_TOKENS, LLMDiagnoser
+    from src.api.models import LLMProvider
+
+    local = LLMDiagnoser(provider=LLMProvider.LOCAL, model="thesis-qwen3.5:9b-24k")
+    hosted = LLMDiagnoser(provider=LLMProvider.OPENAI, model="gpt-5.6-terra", api_key="x")
+
+    assert local.max_tokens == LOCAL_MAX_TOKENS > HOSTED_MAX_TOKENS == hosted.max_tokens
+    # The largest observed development prompt was 16,923 tokens against a fixed
+    # 24,576-token context, so the budget must still fit.
+    assert 16923 + LOCAL_MAX_TOKENS <= 24576
+
+
+def test_an_explicit_completion_budget_still_wins():
+    """So the budget can be varied deliberately and recorded."""
+    from src.api.llm_service import LLMDiagnoser
+    from src.api.models import LLMProvider
+
+    assert LLMDiagnoser(provider=LLMProvider.LOCAL, model="thesis-qwen3.5:9b-24k", max_tokens=2048).max_tokens == 2048
+
+
 # ── Provider errors: stop on permanent ones, retry transient ones ─────────
 
 
