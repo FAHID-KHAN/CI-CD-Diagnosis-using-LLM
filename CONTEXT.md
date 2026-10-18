@@ -22,11 +22,12 @@ Supervisors: Jussi Rasku, Md Mahade Hasan. Thesis seminar: 9 November 2026.
 
 | | |
 | --- | --- |
-| Code | Complete. 143 tests, lint and type checks pass. |
-| Study data | `thesis_pair_2026`: 179 raw, 56 eligible, 27 annotated, split written. Four development runs in `experiments/`. `thesis_gradle_scrapy_2026`: 138 raw, 78 eligible, superseded -- gradle was replaced, so this cohort is not the study cohort. |
+| Code | Complete. 153 tests, lint and type checks pass. |
+| Study data | `thesis_scrapy_vite_2026` is the study cohort: 131 raw, 99 eligible, split written (11 / 11 / 31 plus 46 reserve), **0 annotated**. Superseded: `thesis_pair_2026` (27 annotations, all void -- django and gradle both dropped) and `thesis_gradle_scrapy_2026` (78 eligible, never annotated). |
 | Repositories | scrapy/scrapy and vitejs/vite, decided 18 October 2026 |
-| Active config | None. The gradle/scrapy config is superseded; the scrapy/vite config is not written yet. |
-| Blocked on | Supervisor approval of the evaluation method |
+| Active config | `configs/thesis_scrapy_vite_2026.yaml` — scrapy/scrapy (100) and vitejs/vite (60). No cohort collected from it yet. |
+| Next | Write the codebook, then annotate the 11 development cases |
+| Blocked on | Supervisor approval of the evaluation method; the held-out run stays gated |
 
 Check the live state at any time:
 
@@ -517,11 +518,392 @@ duplicates. `compute_error_signature` strips ISO timestamps, ANSI codes and hex
 addresses, and the commit-distinctness figures above account for the result, so
 20 of 20 is genuine diversity.
 
+**The inclusion gate, run afterwards, met two of four criteria for vite.** Full
+record in `docs/thesis/measurements/repository_gate_2026-10-18.json`.
+
+| criterion | vitejs/vite | scrapy/scrapy | threshold |
+| --- | --- | --- | --- |
+| 1 logs downloadable | 30/30 | 30/30 | >= 30 |
+| 2 build/test/dep/config/env | 24/30 | 23/30 | >= half |
+| 3 linkable to a repair | 5/30 | 18/30 | >= 15 |
+| 4 not dominated by one workflow | 30/30 (CI) | 21/30 (CI) | <= half |
+
+Both unmet readings are artifacts rather than properties of the repository, and
+both were checked rather than assumed.
+
+Criterion 3 is a sampling-window effect. Repair linkage looks for a later
+passing run of the same workflow on the same branch, so it needs elapsed time.
+vite produces 100 failed runs in two days, so its most recent 30 are mostly too
+new to have been repaired. Measured instead on runs from 30 September to
+1 October, vite is **15/30** -- at the threshold and comparable to scrapy's
+recent 18/30. The same test on scrapy's older runs gives **4/30**, because 28 of
+those 30 came from fork branches that no longer exist. The criterion is unstable
+with respect to window and fork ratio, and the gate's "most recent 30" default
+penalises any repository with high failure throughput. Worth fixing in
+`tools/check_repository_gate.py` before it is used again.
+
+Criterion 4 is contradicted by the family counts in the same report: vite shows
+30 distinct error signatures and 30 distinct `job_step` keys out of 30 inspected
+runs, the highest diversity measured anywhere here. The single-workflow figure
+reflects vite keeping all CI in one workflow file.
+
+**A consequence that does need a decision.** Both repositories are test-heavy --
+vite 24 of 30 `build_test` with failing steps concentrated on `Test serve` and
+`Test serve (bundled dev)`, scrapy 23 of 30. This pair will not populate eight
+failure categories evenly, and the existing annotation already skews that way
+(20 of 27 were `test_failure`). That is evidence for the open decision on
+categories. It is not a reason to pick a repository by predicted category, which
+would be circular.
+
 **What this does not settle.** Four sampled logs per repository for sizes and 24
-to 28 inspected runs for jobs and signatures. Enough for a selection decision on
-tractability, which is the only basis the methodology permits, but the real
-distinct-family yield is known only after a collection pass. The nine gradle
-annotations that matched by checksum are discarded with gradle.
+to 30 inspected runs for jobs, signatures and the gate. Enough for a selection
+decision on tractability, which is the only basis the methodology permits, but
+the real distinct-family yield is known only after a collection pass. The nine
+gradle annotations that matched by checksum are discarded with gradle.
+
+## The cohort is sampled from an age window, not from the newest runs
+
+Added 18 October 2026, with the sampling-frame change in
+`src/data_collection/data_collection.py`.
+
+Collection used to ask GitHub for the newest failed runs. That is the worst
+window for ground truth. A repair is found by looking for a later passing run of
+the same workflow on the same branch, so a failure has to have had time to be
+fixed before the repair exists to be read -- and the ground-truth standard in
+plan §10(c) is "documented repair where available, otherwise blind annotation",
+with evaluator bias named as the first validity threat in §11 precisely because
+the annotation originates with one person.
+
+Repair-linked share of the first 20 failed runs in each window, measured
+18 October 2026:
+
+| window | vitejs/vite | scrapy/scrapy | runs available |
+| --- | --- | --- | --- |
+| 0-7 days old | 5/20 | 11/20 | 155 / 44 |
+| **14-45 days old** | **10/20** | **17/20** | **261 / 284** |
+| 45-80 days old | 8/20 | 4/20 | 440 / 287 |
+
+Beyond about 45 days the rate falls again: GitHub expires logs at around 90 days
+and the branches a repair would appear on have often been deleted. The config
+declares `sampling_window_days: {minimum_age: 14, maximum_age: 45}`, where
+availability is 261 and 284 runs against the 160 needed.
+
+This roughly doubles the share of cases whose annotation can be checked against
+a documented repair. It does not write any ground truth and it does not look at
+model output; it selects on evidence availability, which the methodology
+permits.
+
+**Two details that matter more than they look.** The manifest records the
+resolved absolute dates (`created_range`), not the ages, because "14 to 45 days
+ago" denotes a different interval every day and only the absolute range makes a
+frame reproducible. And a resumed collection reuses the recorded range instead
+of recomputing it -- otherwise an interruption would move the window by however
+long it lasted and the cohort would be drawn from two different frames. A resume
+against a protocol that has gained a window where the interrupted run had none
+is refused outright.
+
+Preflight samples inside the same frame, so its one-log check is drawn from the
+population collection will use.
+
+## How each research question gets answered
+
+Written 18 October 2026. The questions are in `docs/thesis/EVALUATION_PLAN.md`
+§3. This maps each one to the measurement that answers it and to what is still
+missing, because two of the three have a gap that will not close by itself.
+
+### Proposed revision, 18 October 2026 -- not yet sent to supervisors
+
+`EVALUATION_PLAN.md` §3 still carries the original wording. These are drafted
+replacements; §3 is deliberately untouched because it states the proposals in
+the author's own words and the revision is a request to supervisors, not a
+decision already taken.
+
+> **Primary.** How accurately can an LLM-based system identify the category of a
+> CI/CD pipeline failure and the log lines evidencing it, relative to a
+> deterministic rule-based baseline?
+>
+> **SRQ1.** Under identical preprocessed input, how does the diagnostic
+> performance of a proprietary LLM differ from that of a locally hosted
+> open-weights model, and at what difference in cost and latency?
+>
+> **SRQ2.** Which properties of a CI/CD failure log and its pipeline
+> configuration determine whether the system can diagnose the failure?
+
+**Primary.** Two edits. "Identify failure causes" became the category and the
+evidencing log lines, so the question names what is actually scored. And
+"relative to a deterministic rule-based baseline" replaces "how effectively",
+which had no referent -- an accuracy figure alone answers nothing. This makes
+wiring `src/api/baseline.py` into a run a precondition rather than an
+improvement. If the 0/1/2 rubric is adopted, extend to "the category, its root
+cause, and the log lines evidencing it"; that is the only remaining fork.
+
+**SRQ1.** "Under identical preprocessed input" carries the constraint the
+original wording would overclaim past: the local model's 24,576-token context
+sets the filter budget for both conditions, so this compares two models under
+one shared deployable configuration, not each at its best. Cost and latency are
+named because they were measured and because "differ" is not only accuracy.
+
+**SRQ2.** Reformulated from failure categories to log and pipeline properties,
+because the sampling frame cannot populate eight categories. Category survives
+inside it as one factor among four, reported where n permits.
+
+**Disclosure this requires.** The methods chapter must state that SRQ2 was
+reformulated on 18 October 2026 because the cohort's category distribution --
+known from triage and the repository gate, neither of which involves model
+output -- could not support per-category comparison. Reformulating before the
+held-out run on evidence about cohort composition is legitimate scoping;
+reformulating after seeing held-out accuracy would not be, and the whole
+distinction lies in the timing and the stated basis. Undisclosed, a moved
+question reads as fishing.
+
+### Primary -- how effectively can the system identify failure causes?
+
+"Effectively" is meaningless without a reference point, so the answer is three
+numbers, not one.
+
+* **The floor** is the rule-based baseline in `src/api/baseline.py`: a
+  deterministic keyword-and-pattern classifier that receives the same filtered
+  log, returns the same taxonomy, and is scored by the same code. If the models
+  do not beat fixed rules, there is no result to report. **It is not wired into
+  `automated_scripts/benchmark_models.py`.** This is the largest single gap in
+  answering the primary question, and it was a commitment made to supervisors.
+* **The ceiling** is two-sided. `preprocessing_recall` bounds what the model
+  could possibly have found, because it cannot identify a cause from evidence it
+  never received. Inter-annotator agreement bounds what "correct" means at all,
+  and there is still no second reviewer.
+* **The measurement** is `category_scores` plus `evidence_line_scores` in
+  `src/evaluation/category_metrics.py` -- category accuracy and the precision,
+  recall and F1 of the log lines the model cites.
+
+One wording problem has to be resolved rather than left. The question asks about
+failure *causes*; the system scores the *category* and the cited evidence lines,
+not the free-text root cause against the annotated one. Either adopt the 0/1/2
+rubric, which roughly doubles annotation effort per case, or reword the question
+to failure categories and supporting evidence. Plan §10(e). Leaving the question
+broader than the measurement is the gap a supervisor will find first.
+
+### SRQ1 -- proprietary versus open-weights
+
+The strongest of the three, and the one the apparatus was built for. Paired
+design: both conditions receive the identical filtered log, the same prompt and
+the same response schema, so the only difference is the model. `McNemar` and
+`Wilcoxon` over discordant pairs, via `statistical_tests.json`,
+`pairwise_agreements` and `cross_experiment_deltas`. Cost and latency belong in
+the answer too, since "differ" is not only about accuracy.
+
+Two things must be stated plainly or the comparison is overclaimed. The local
+model's 24,576-token context sets the preprocessing budget for **both**
+conditions -- 485 tokens of headroom at the largest observed prompt -- so this
+measures the two models under one shared deployable configuration, not each
+model at its best. And ties carry no information: a case where both fail because
+the evidence never survived filtering reduces power without biasing either way.
+
+### SRQ2 -- which categories are diagnosed best and worst
+
+The weak one. `category_scores` and `macro_f1` compute it correctly, but the
+cohort will not contain eight categories to compare. Of 27 annotated cases 20
+were `test_failure`; vite is 24 of 30 `build_test` and scrapy 23 of 30. Several
+categories will arrive with one case or none, and a per-category F1 over n=1 is
+not a finding.
+
+Two honest responses, and they are not exclusive:
+
+* Rescope the question to the categories the cohort actually contains, and
+  report the remainder as not evaluable rather than as poor performance. Plan
+  §10(d), and the data now forces the issue.
+* Use **controlled defects** to populate the thin categories deliberately. This
+  is the only lever available: repositories cannot be selected by predicted
+  category, because choosing data by the outcome under study is circular, and
+  the natural failure distribution of any actively maintained project is
+  test-heavy. Seeded faults, capped at 2 per category and 16 overall, are what
+  turns SRQ2 from an observation about one skewed cohort into a question with an
+  answer. Not started, and the item with the longest tail.
+
+### What this means in order of urgency
+
+1. Wire the baseline into a run. Without it the primary question has no anchor.
+2. Decide the root-cause wording -- rubric, or narrow the question.
+3. Decide categories, and whether controlled defects are in scope. SRQ2 depends
+   on it.
+4. Find a second reviewer. Agreement is the ceiling on every accuracy claim
+   above, and it is also a supervisor condition.
+
+## Ground truth with a single annotator
+
+Decided 18 October 2026: there will be no second reviewer. Independent
+verification was a supervisor condition, so the decision has to be disclosed
+with its substitute plan rather than quietly omitted.
+
+**What can no longer be claimed.** No inter-rater reliability. Cohen's kappa
+must not be reported as inter-annotator agreement, and nothing may describe the
+ground truth as independently verified. `--mode verify` in
+`automated_scripts/annotate_blind.py` remains in the tool, unused for its
+original purpose.
+
+**What substitutes, strongest first.**
+
+1. **Documented repair as the anchor.** This is why the sampling window matters
+   and it is now doing double duty. In the 14-45 day frame roughly 85% of scrapy
+   cases and 50% of vite cases have a findable repair, so for most of the cohort
+   the ground truth rests on an artefact the project's own developers produced
+   rather than on one person's reading. It also permits a real analysis rather
+   than an assurance: report accuracy separately for repair-anchored and
+   judgement-only cases. If the two are close, that is empirical evidence that
+   the annotation is not driving the result.
+2. **Blind annotation**, already implemented. State precisely what it does. It
+   closes *contamination* -- labels cannot be shaped by model output, because no
+   model output is ever shown. It does not address *reliability*. Conflating the
+   two is the error to avoid, because a single annotator who never saw model
+   output can still be consistently wrong.
+3. **Intra-rater (test-retest) agreement.** Re-annotate roughly 20 cases after a
+   gap of one to two weeks with `--mode verify` under the same annotator id. The
+   mode shows neither the previous label nor any model output, and adjudication
+   snapshots the first label into `annotator_*`, so both survive and can be
+   compared. Report it as intra-rater self-consistency, explicitly not as
+   inter-rater agreement. **Kappa is not implemented** -- it appears only as a
+   comment at `annotate_blind.py:386`, so this needs a small piece of code.
+4. **Transparency.** Publish the full annotation set with its checksums in the
+   freeze package and the appendix so a reader can audit every label, alongside
+   the procedural checks `audit_annotations` already enforces: every annotation
+   must cite evidence lines, and a root cause may not restate its category.
+
+**Why the revised research questions survive this better than the originals.**
+
+* **SRQ1 is nearly immune.** Any labelling bias applies identically to both
+  models, so it cancels in the contrast. The paired comparison measures two
+  conditions against the same labels, whatever those labels' absolute quality.
+* **SRQ2 as reformulated is largely immune.** Log length, job structure and the
+  `lost_at` filter stage are measured mechanically, not annotated. Only
+  preprocessing recall touches annotated evidence lines, and none of it depends
+  on the category judgement.
+* **The primary question is the exposed one**, because it is the only absolute
+  accuracy claim. This is where the baseline earns its place: "beats
+  deterministic rules by X" is far more robust to annotation quality than "is
+  X% accurate".
+
+**How the conclusion should be scoped.** State boundary-condition findings with
+most confidence, because they rest least on annotation -- the ~40,000-line
+preprocessing wall, umbrella jobs, JVM monorepo intractability. State relative
+claims next: model against model, system against baseline. State absolute
+accuracy as conditional on a single-annotator ground truth. Lead the limitations
+with that, name the direction of possible bias, and present the repair-anchored
+comparison as the evidence bearing on it.
+
+## Where the thesis stands, 18 October 2026
+
+The apparatus is close to complete and the evidence is at zero. That is an
+unusual position and the risk in it is specific, so it is recorded plainly.
+
+**Strong.** 148 offline tests, checksummed manifests, immutable study
+directories, config SHA-256 provenance, blind annotation with adjudication,
+leakage guards, triage that re-runs offline from raw logs, reporting that
+recomputes from per-log files so an interrupted run still reports correctly. Plus
+findings that are measured rather than asserted: the ~40,000-line preprocessing
+wall with a clean 0-of-22 against 5-of-5 separation; umbrella jobs as a
+construct-validity problem rather than a size problem; JVM monorepo CI shown
+intractable across five projects; the filter's line-cap defect, whose one-line
+fix moved accuracy from 12.5% to 43.8% and recall from 32.6% to 57.6%; repair
+traceability roughly doubling under the 14-45 day window.
+
+**At zero.** Ground truth. All 27 existing annotations are void -- 16 died with
+django, 11 with gradle -- and the live cohort has none. Also outstanding: the
+baseline not wired into a run, 34 codebook definitions, controlled defects, and
+supervisor approval of a plan whose §3 and §10 still name django.
+
+**The binding constraint is annotation time.** Three repository attempts --
+django, gradle, vite -- consumed the weeks that would have gone to annotation.
+That was not waste: the selection work was necessary and produced the best
+findings here. But the consequence is that what remains is annotation-dominated,
+and annotation cannot be parallelised, automated or delegated. The minimum path
+is roughly 80 cases at 15 development, 15 pilot and 50 held-out, each requiring a
+5,000 to 40,000-line log to be read.
+
+**Recommended scope reduction**, if the seminar date requires results rather
+than work in progress:
+
+1. Write the codebook before annotating anything. Annotating without it means
+   inconsistent labels and a second pass.
+2. Shrink the cohort to about 10 development, 10 pilot, 30 held-out. A smaller
+   cohort honestly reported beats a larger one half-annotated, and the
+   boundary-condition findings do not need a large n.
+3. Drop controlled defects and take the narrower SRQ2, which does not need them.
+4. Send the evaluation plan now. It is stale, and supervisors are the gate on
+   the held-out run.
+
+## The cohort, collected 18 October 2026
+
+`thesis_scrapy_vite_2026`. Frame `2026-09-03..2026-10-04`, recorded in the
+collection manifest as `sampling_window.created_range`.
+
+131 raw logs, 99 eligible, 32 excluded (31 `out_of_scope_job`, 1 `token_error`).
+Zero duplicate error signatures, zero duplicate families, zero bot runs, zero
+umbrella jobs -- so every eligible case represents a distinct family.
+
+| | eligible | median lines | max | over 40k |
+| --- | --- | --- | --- | --- |
+| scrapy/scrapy | 60 → 54 | 5,348 | 52,421 | 18 |
+| vitejs/vite | 45 | 4,832 | 5,244 | 0 |
+
+vite is exactly what the scout predicted: tight, consistent, nothing near the
+filter's limit. scrapy carries all 18 large logs, and they are genuine
+`tests (...)` matrix jobs -- verbose pytest output rather than aggregation, so
+the umbrella rule correctly does not fire on them.
+
+**Do not assume those 18 behave like gradle's.** The ~40,000-line boundary was
+measured on five gradle cases. The filter now keeps the *last* 500 lines and
+pytest prints its failure summary at the end, so scrapy's large logs may retain
+their evidence where gradle's did not. Whether the boundary transfers is unknown
+until those cases are annotated and `preprocessing_recall` can be computed, and
+assuming it transfers would be repeating an error already made once here.
+
+**scrapy collected 71 of 100 requested**, which is the
+`complete_with_warnings` status. Not the sampling window:
+`collect_logs_from_repo` fetches a single API page of 100 candidate runs, and 29
+were undownloadable or had no job. Paginating would fix it; the cohort is
+oversized regardless.
+
+**A scope leak was caught and closed.** Four cases were mypy jobs -- scrapy
+names them `checks (3.10, mypy)`, `"check"` is an in-scope pattern, and `"mypy"`
+was not in the `lint_format` exclusions, so they classified as `build_test`.
+This is precisely how django's `Run Quality Checks on a PR` was admitted. Added
+`mypy`, `pyright`, `typecheck`, `type-check` and `pre-commit` to the excluded
+patterns; `pre-commit` resolves a question open since the gradle cohort, on the
+grounds that it runs whatever hooks a repository configures, predominantly lint,
+and aggregates many of them under one job. Re-triage took the cohort from 105 to
+99.
+
+## The split, written 18 October 2026
+
+Targets 10 / 10 / 30, rule `combined`, seed `20261010`.
+
+| bucket | allocated | scrapy | vite | over 40k | median lines |
+| --- | --- | --- | --- | --- | --- |
+| development | 11 | 6 | 5 | 2 | 4,793 |
+| pilot | 11 | 6 | 5 | 2 | 4,862 |
+| held_out | 31 | 17 | 14 | 5 | 4,793 |
+| reserve | 46 | 25 | 21 | 9 | 4,874 |
+
+**53 cases to annotate.** Each partition sits one over target because families
+are allocated whole and one can tip a partition past its quota; splitting a
+family is the thing that must never happen, so the overshoot is accepted.
+
+Large logs are spread at 16-19% per bucket rather than concentrated, which was
+the risk worth checking: held-out keeps about 26 cases well inside the filter's
+reach even if all five of its large ones lose their evidence, so the single
+confirmatory run will not be dominated by ties.
+
+**`make_split.py` gained a `RESERVE` bucket.** Everything past quota previously
+fell into held-out, which produced a 77-case held-out set from a target of 30. A
+held-out set larger than can be annotated is not a larger held-out set but an
+undefined one: scoring needs ground truth, so unannotated cases parked there
+would leave the confirmatory set to be decided case by case during annotation.
+
+Two guards came with it. `check_no_family_spans_partitions` now covers the
+reserve, so a reserved case cannot share a fault with a held-out one. And the
+manifest records `reserve_is_outside_the_confirmatory_analysis: true` -- moving a
+case from reserve into held_out after any held-out result has been seen would
+make the held-out set a function of those results, so a later extension requires
+a new split manifest with a stated reason, exactly as a re-split does.
 
 ## Open decisions
 
@@ -533,6 +915,10 @@ annotation:
   question to categories and evidence lines.
 - ~~What happens to gradle.~~ Settled 18 October 2026: replaced by
   vitejs/vite. The next step is a new config and a fresh collection pass.
+- **The research questions.** Revised wording for all three is drafted in the
+  section above and has not been sent to supervisors. `EVALUATION_PLAN.md` §3
+  still carries the original. SRQ2 moving needs their agreement, and the Primary
+  commits to the baseline being wired into a run.
 - **Whether to re-triage `thesis_gradle_scrapy_2026`.** The two rules it would
   apply now exist -- `is_umbrella_job` in `src/evaluation/job_scope.py`, and
   `BOT_MARKERS` entries for the five maintenance workflows that slipped through.
@@ -542,7 +928,10 @@ annotation:
   next collection, not this one.
 
 Two commitments made to supervisors that are not implemented: a **rule-based
-baseline**, and **root-cause / suggested-fix quality scoring**.
+baseline**, and **root-cause / suggested-fix quality scoring**. A third,
+**independent second review**, has been declined -- see the single-annotator
+section above for the substitute plan, which has to be disclosed to supervisors
+rather than left as a silent omission.
 
 ## Where to look
 

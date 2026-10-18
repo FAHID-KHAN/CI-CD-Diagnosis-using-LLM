@@ -116,6 +116,19 @@ EXCLUDED_PATTERNS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
             "isort",
             "spotless",
             "clippy",
+            # Static analysis is checked here rather than treated as a build or
+            # test failure. scrapy names these jobs "checks (3.10, mypy)", and
+            # "check" is an in-scope pattern, so without these four entries they
+            # classified as build_test -- the same way django's
+            # "Run Quality Checks on a PR" was admitted on the word "check".
+            "mypy",
+            "pyright",
+            "typecheck",
+            "type-check",
+            # pre-commit runs whatever hooks a repository configures, which is
+            # predominantly formatting and lint, and it aggregates many of them
+            # under one job, so no single root cause is attributable.
+            "pre-commit",
         ),
     ),
     ("spell", ("spell", "codespell", "typo")),

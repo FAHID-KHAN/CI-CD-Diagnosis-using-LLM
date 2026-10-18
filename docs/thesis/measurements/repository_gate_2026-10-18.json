@@ -1,0 +1,1251 @@
+{
+  "checked_at": "2026-10-18T12:01:47.840445+00:00",
+  "inspect_count": 30,
+  "thresholds": {
+    "min_logs": 30,
+    "min_repairs": 15,
+    "max_repair_commits": 10,
+    "max_age_days": 80
+  },
+  "results": [
+    {
+      "repository": "vitejs/vite",
+      "inspected": 30,
+      "bot_runs_skipped": 0,
+      "too_old_skipped": 0,
+      "no_job_skipped": 0,
+      "candidates_available": 100,
+      "max_age_days": 80,
+      "date_range": [
+        "2026-10-16",
+        "2026-10-18"
+      ],
+      "cases": [
+        {
+          "log_id": "gh_vitejs_vite_39116756330",
+          "repository": "vitejs/vite",
+          "error_signature": "94f4e8da3036",
+          "fixing_revision": 39116759664,
+          "run_id": 39116756330,
+          "workflow": "CI",
+          "branch": "fix/dev-add-respect-external-returned-by-plugins",
+          "job": "Build&Test: node-24, windows-latest",
+          "failing_step": "Test serve (bundled dev)",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 39116759664,
+            "commits": 0,
+            "files": 0,
+            "url": "https://github.com/vitejs/vite/compare/92c83966df879f34b139711d980b9857752ffb47...92c83966df879f34b139711d980b9857752ffb47"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_vitejs_vite_39116442459",
+          "repository": "vitejs/vite",
+          "error_signature": "26a6ebe35d13",
+          "fixing_revision": null,
+          "run_id": 39116442459,
+          "workflow": "CI",
+          "branch": "fix/23783-excluded-vue-exports",
+          "job": "Build&Test: node-24, windows-latest",
+          "failing_step": "Test serve",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_39116418505",
+          "repository": "vitejs/vite",
+          "error_signature": "172b4977110c",
+          "fixing_revision": null,
+          "run_id": 39116418505,
+          "workflow": "CI",
+          "branch": "feat/inline-html-script-inline-query",
+          "job": "Build&Test: node-24, windows-latest",
+          "failing_step": "Test serve (bundled dev)",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_39116189072",
+          "repository": "vitejs/vite",
+          "error_signature": "5975965d55d2",
+          "fixing_revision": null,
+          "run_id": 39116189072,
+          "workflow": "CI",
+          "branch": "refactor/dev-use-module-url-throughout-html-transforms",
+          "job": "Build&Test: node-24, windows-latest",
+          "failing_step": "Test serve (bundled dev)",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_39115874974",
+          "repository": "vitejs/vite",
+          "error_signature": "a298220e87fd",
+          "fixing_revision": 39116759664,
+          "run_id": 39115874974,
+          "workflow": "CI",
+          "branch": "fix/dev-add-respect-external-returned-by-plugins",
+          "job": "Build&Test: node-22, ubuntu-latest",
+          "failing_step": "Test serve (bundled dev)",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 39116759664,
+            "commits": 2,
+            "files": 12,
+            "url": "https://github.com/vitejs/vite/compare/c102a289dc3aedfcaf9de74419fec18d8768269f...92c83966df879f34b139711d980b9857752ffb47"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_vitejs_vite_39115838740",
+          "repository": "vitejs/vite",
+          "error_signature": "d9cd66bf3cbe",
+          "fixing_revision": null,
+          "run_id": 39115838740,
+          "workflow": "CI",
+          "branch": "refactor/dev-share-moduleurl-browserurl-conversions",
+          "job": "Build&Test: node-22, ubuntu-latest",
+          "failing_step": "Test serve (bundled dev)",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_39105344499",
+          "repository": "vitejs/vite",
+          "error_signature": "38d83ef4f2a8",
+          "fixing_revision": null,
+          "run_id": 39105344499,
+          "workflow": "CI",
+          "branch": "main",
+          "job": "Build&Test: node-20, ubuntu-latest",
+          "failing_step": "Test serve (bundled dev)",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_39105100070",
+          "repository": "vitejs/vite",
+          "error_signature": "c71f80f6fd52",
+          "fixing_revision": null,
+          "run_id": 39105100070,
+          "workflow": "CI",
+          "branch": "fix/23783-excluded-vue-exports",
+          "job": "Build&Test: node-24, windows-latest",
+          "failing_step": "Test serve",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_39103748126",
+          "repository": "vitejs/vite",
+          "error_signature": "4f2039a6f181",
+          "fixing_revision": null,
+          "run_id": 39103748126,
+          "workflow": "CI",
+          "branch": "fix/css-server-transform-sourcemap",
+          "job": "Build&Test: node-24, macos-latest",
+          "failing_step": "Test serve (bundled dev)",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_39083470301",
+          "repository": "vitejs/vite",
+          "error_signature": "a5c33014cd16",
+          "fixing_revision": null,
+          "run_id": 39083470301,
+          "workflow": "CI",
+          "branch": "fix-23757-dep-optimizer-deconflicted-entry",
+          "job": "Build&Test: node-20, ubuntu-latest",
+          "failing_step": "Test serve (bundled dev)",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_39071527832",
+          "repository": "vitejs/vite",
+          "error_signature": "3ca774d2275f",
+          "fixing_revision": null,
+          "run_id": 39071527832,
+          "workflow": "CI",
+          "branch": "fix/23809-css-post-sourcemap",
+          "job": "Build&Test: node-24, macos-latest",
+          "failing_step": "Test serve",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_39064674629",
+          "repository": "vitejs/vite",
+          "error_signature": "cc52ba066aab",
+          "fixing_revision": 39079337938,
+          "run_id": 39064674629,
+          "workflow": "CI",
+          "branch": "feat/resolve-external-dev",
+          "job": "Build&Test: node-26, ubuntu-latest",
+          "failing_step": "Test serve (bundled dev)",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 39079337938,
+            "commits": 1,
+            "files": 2,
+            "url": "https://github.com/vitejs/vite/compare/f35df098878c9b7bd771081085ad15b9a8a9660d...fa6a54d772d2a0f1e588a2d45f2bba860e471817"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_vitejs_vite_39063873156",
+          "repository": "vitejs/vite",
+          "error_signature": "273a023bfc4d",
+          "fixing_revision": 39079337938,
+          "run_id": 39063873156,
+          "workflow": "CI",
+          "branch": "feat/resolve-external-dev",
+          "job": "Build&Test: node-24, windows-latest",
+          "failing_step": "Test serve",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 39079337938,
+            "commits": 2,
+            "files": 2,
+            "url": "https://github.com/vitejs/vite/compare/2b1c5e35a67df8799aaeafadc5273813a1da3704...fa6a54d772d2a0f1e588a2d45f2bba860e471817"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_vitejs_vite_39063128075",
+          "repository": "vitejs/vite",
+          "error_signature": "c12983482edc",
+          "fixing_revision": null,
+          "run_id": 39063128075,
+          "workflow": "CI",
+          "branch": "fix/hot-send-while-disconnected",
+          "job": "Build&Test: node-20, ubuntu-latest",
+          "failing_step": "Test serve (bundled dev)",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_39061661988",
+          "repository": "vitejs/vite",
+          "error_signature": "03b6be34e625",
+          "fixing_revision": 39079337938,
+          "run_id": 39061661988,
+          "workflow": "CI",
+          "branch": "feat/resolve-external-dev",
+          "job": "Build&Test: node-24, windows-latest",
+          "failing_step": "Test serve (bundled dev)",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 39079337938,
+            "commits": 3,
+            "files": 2,
+            "url": "https://github.com/vitejs/vite/compare/7f8174d83016a02e30a684b29ab845c685090ef9...fa6a54d772d2a0f1e588a2d45f2bba860e471817"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_vitejs_vite_39045867180",
+          "repository": "vitejs/vite",
+          "error_signature": "4f07fe012fe4",
+          "fixing_revision": null,
+          "run_id": 39045867180,
+          "workflow": "CI",
+          "branch": "fix/query-only-link-eisdir-23807",
+          "job": "Lint: node-24, ubuntu-latest",
+          "failing_step": "Lint",
+          "classification": "lint_format",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_39045432375",
+          "repository": "vitejs/vite",
+          "error_signature": "5f91a990b983",
+          "fixing_revision": null,
+          "run_id": 39045432375,
+          "workflow": "CI",
+          "branch": "feat/inline-html-script-inline-query",
+          "job": "Build&Test: node-22, ubuntu-latest",
+          "failing_step": "Test serve (bundled dev)",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_39044854316",
+          "repository": "vitejs/vite",
+          "error_signature": "efd11c2f6648",
+          "fixing_revision": null,
+          "run_id": 39044854316,
+          "workflow": "CI",
+          "branch": "feat/inline-html-script-inline-query",
+          "job": "Build&Test: node-24, windows-latest",
+          "failing_step": "Test serve",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_39044142038",
+          "repository": "vitejs/vite",
+          "error_signature": "0725a367ba0c",
+          "fixing_revision": null,
+          "run_id": 39044142038,
+          "workflow": "CI",
+          "branch": "feat/inline-html-script-inline-query",
+          "job": "Build&Test: node-24, windows-latest",
+          "failing_step": "Test serve (bundled dev)",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_39043350306",
+          "repository": "vitejs/vite",
+          "error_signature": "ef0839206dea",
+          "fixing_revision": null,
+          "run_id": 39043350306,
+          "workflow": "CI",
+          "branch": "feat/inline-html-script-inline-query",
+          "job": "Lint: node-24, ubuntu-latest",
+          "failing_step": "Typecheck",
+          "classification": "lint_format",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_39011946130",
+          "repository": "vitejs/vite",
+          "error_signature": "6abc2b5d6534",
+          "fixing_revision": null,
+          "run_id": 39011946130,
+          "workflow": "CI",
+          "branch": "feat/inline-html-script-inline-query",
+          "job": "Lint: node-24, ubuntu-latest",
+          "failing_step": "Check formatting",
+          "classification": "lint_format",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_39011915350",
+          "repository": "vitejs/vite",
+          "error_signature": "1a80292d87e3",
+          "fixing_revision": null,
+          "run_id": 39011915350,
+          "workflow": "CI",
+          "branch": "fix/23783-excluded-vue-exports",
+          "job": "Lint: node-24, ubuntu-latest",
+          "failing_step": "Check formatting",
+          "classification": "lint_format",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_38996534132",
+          "repository": "vitejs/vite",
+          "error_signature": "4e06c1b7e843",
+          "fixing_revision": null,
+          "run_id": 38996534132,
+          "workflow": "CI",
+          "branch": "fix-23706-module-types",
+          "job": "Build&Test: node-24, windows-latest",
+          "failing_step": "Test serve (bundled dev)",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_38953440857",
+          "repository": "vitejs/vite",
+          "error_signature": "fd828f5da41e",
+          "fixing_revision": null,
+          "run_id": 38953440857,
+          "workflow": "CI",
+          "branch": "fix/watch-root-under-ignored-dir",
+          "job": "Build&Test: node-24, macos-latest",
+          "failing_step": "Test unit",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_38936613381",
+          "repository": "vitejs/vite",
+          "error_signature": "1a127de368ed",
+          "fixing_revision": null,
+          "run_id": 38936613381,
+          "workflow": "CI",
+          "branch": "respect-user-conditions-css",
+          "job": "Build&Test: node-20, ubuntu-latest",
+          "failing_step": "Test build",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_38934441087",
+          "repository": "vitejs/vite",
+          "error_signature": "f92750500385",
+          "fixing_revision": null,
+          "run_id": 38934441087,
+          "workflow": "CI",
+          "branch": "test/bundled-dev-skip-tags-js-sourcemap",
+          "job": "Build&Test: node-20, ubuntu-latest",
+          "failing_step": "Test serve (bundled dev)",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_38934439184",
+          "repository": "vitejs/vite",
+          "error_signature": "d4d9e24f9921",
+          "fixing_revision": null,
+          "run_id": 38934439184,
+          "workflow": "CI",
+          "branch": "test/bundled-dev-skip-tags-json",
+          "job": "Build&Test: node-20, ubuntu-latest",
+          "failing_step": "Test serve",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_38923774899",
+          "repository": "vitejs/vite",
+          "error_signature": "52da5a7222df",
+          "fixing_revision": null,
+          "run_id": 38923774899,
+          "workflow": "CI",
+          "branch": "fix/bundled-dev-injected-virtual-modules",
+          "job": "Build&Test: node-26, ubuntu-latest",
+          "failing_step": "Test serve",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_38918528655",
+          "repository": "vitejs/vite",
+          "error_signature": "dc2539fc55ed",
+          "fixing_revision": null,
+          "run_id": 38918528655,
+          "workflow": "CI",
+          "branch": "fix/bundled-dev-lazy-base",
+          "job": "Lint: node-24, ubuntu-latest",
+          "failing_step": "Typecheck",
+          "classification": "lint_format",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_vitejs_vite_38918516510",
+          "repository": "vitejs/vite",
+          "error_signature": "70931b9b4ebd",
+          "fixing_revision": null,
+          "run_id": 38918516510,
+          "workflow": "CI",
+          "branch": "fix/bundled-dev-lazy-base",
+          "job": "Lint: node-24, ubuntu-latest",
+          "failing_step": "Typecheck",
+          "classification": "lint_format",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        }
+      ],
+      "criteria": [
+        {
+          "criterion": "1  Failed runs with downloadable logs",
+          "value": "30 / 30",
+          "reference": true,
+          "requirement": "need >= 30"
+        },
+        {
+          "criterion": "2  Build, test, dependency, config or environment",
+          "value": "24 / 30",
+          "reference": true,
+          "requirement": "need >= half"
+        },
+        {
+          "criterion": "3  Cases linkable to a repair",
+          "value": "5 / 30",
+          "reference": false,
+          "requirement": "need >= 15"
+        },
+        {
+          "criterion": "4  Not dominated by one workflow",
+          "value": "30 / 30 (CI)",
+          "reference": false,
+          "requirement": "need <= half"
+        }
+      ],
+      "references_met": 2,
+      "family_rules": [
+        {
+          "rule": "fix",
+          "cases": 30,
+          "families": 27,
+          "singletons": 25,
+          "largest_family": 3,
+          "duplicate_cases": 3,
+          "basis_counts": {
+            "shared repair": 2,
+            "singleton": 25
+          }
+        },
+        {
+          "rule": "signature",
+          "cases": 30,
+          "families": 30,
+          "singletons": 30,
+          "largest_family": 1,
+          "duplicate_cases": 0,
+          "basis_counts": {
+            "shared error signature": 30
+          }
+        },
+        {
+          "rule": "job_step",
+          "cases": 30,
+          "families": 30,
+          "singletons": 30,
+          "largest_family": 1,
+          "duplicate_cases": 0,
+          "basis_counts": {
+            "recurring job and step": 30
+          }
+        },
+        {
+          "rule": "combined",
+          "cases": 30,
+          "families": 27,
+          "singletons": 25,
+          "largest_family": 3,
+          "duplicate_cases": 3,
+          "basis_counts": {
+            "shared repair": 2,
+            "shared error signature": 25
+          }
+        }
+      ],
+      "families": {
+        "rule": "combined",
+        "cases": 30,
+        "families": 27,
+        "singletons": 25,
+        "largest_family": 3,
+        "duplicate_cases": 3,
+        "basis_counts": {
+          "shared repair": 2,
+          "shared error signature": 25
+        }
+      },
+      "classification_counts": {
+        "build_test": 24,
+        "lint_format": 6
+      }
+    },
+    {
+      "repository": "scrapy/scrapy",
+      "inspected": 30,
+      "bot_runs_skipped": 0,
+      "too_old_skipped": 0,
+      "no_job_skipped": 22,
+      "candidates_available": 100,
+      "max_age_days": 80,
+      "date_range": [
+        "2026-10-10",
+        "2026-10-18"
+      ],
+      "cases": [
+        {
+          "log_id": "gh_scrapy_scrapy_39095776887",
+          "repository": "scrapy/scrapy",
+          "error_signature": "8970ed7afc4d",
+          "fixing_revision": null,
+          "run_id": 39095776887,
+          "workflow": "VCS dependencies",
+          "branch": "master",
+          "job": "tests",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_39025860773",
+          "repository": "scrapy/scrapy",
+          "error_signature": "9b4d869b123d",
+          "fixing_revision": 39030368642,
+          "run_id": 39025860773,
+          "workflow": "CI",
+          "branch": "drop-pypy-support-hard",
+          "job": "tests (windows, 3.11.9, min-extra-deps)",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 39030368642,
+            "commits": 1,
+            "files": 2,
+            "url": "https://github.com/scrapy/scrapy/compare/0a46aa719ed643566ea5ed8413e36839f98d9586...e78dde80cae64a5c63afd888a5e1d8c6e52a837d"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_39001137617",
+          "repository": "scrapy/scrapy",
+          "error_signature": "45ddcc6e79e9",
+          "fixing_revision": null,
+          "run_id": 39001137617,
+          "workflow": "VCS dependencies",
+          "branch": "master",
+          "job": "tests",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38943856840",
+          "repository": "scrapy/scrapy",
+          "error_signature": "2e45f8193748",
+          "fixing_revision": 38944038008,
+          "run_id": 38943856840,
+          "workflow": "CI",
+          "branch": "pylint-j",
+          "job": "checks (3.15, pylint)",
+          "failing_step": "Run check",
+          "classification": "lint_format",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 38944038008,
+            "commits": 1,
+            "files": 1,
+            "url": "https://github.com/scrapy/scrapy/compare/e519719a8772cfd6ea0e4c76f2bce315ff90bb0c...a95b9049a2acc00257d6ec2715daf00ac2963c37"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38909207760",
+          "repository": "scrapy/scrapy",
+          "error_signature": "13bbf6522ddc",
+          "fixing_revision": 38914894828,
+          "run_id": 38909207760,
+          "workflow": "CI",
+          "branch": "master",
+          "job": "tests (ubuntu, 3.12, py)",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 38914894828,
+            "commits": 1,
+            "files": 2,
+            "url": "https://github.com/scrapy/scrapy/compare/30e9c7c12915a6c02aecd7d5aaad1b07dedc27a5...53d3bc7811ee7a51e09104a2207e9bbc00616873"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38907060236",
+          "repository": "scrapy/scrapy",
+          "error_signature": "9d2e31566cce",
+          "fixing_revision": null,
+          "run_id": 38907060236,
+          "workflow": "CI",
+          "branch": "downloader-test-active-idle",
+          "job": "tests (ubuntu, 3.15.0-rc.1, py)",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38871945623",
+          "repository": "scrapy/scrapy",
+          "error_signature": "25b3d32fdc82",
+          "fixing_revision": null,
+          "run_id": 38871945623,
+          "workflow": "CI",
+          "branch": "active-downloads-maxsize",
+          "job": "checks (3.14, docs)",
+          "failing_step": "Run check",
+          "classification": "docs",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 38885292299,
+            "commits": 11,
+            "files": 31,
+            "url": "https://github.com/scrapy/scrapy/compare/42c5efad3a3c43bd323560e29c5c816356103412...af8143216e0e002d6532eb26e0f09de53207b3e2"
+          },
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38848660617",
+          "repository": "scrapy/scrapy",
+          "error_signature": "aa152785edcd",
+          "fixing_revision": null,
+          "run_id": 38848660617,
+          "workflow": "VCS dependencies",
+          "branch": "master",
+          "job": "tests",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38750708233",
+          "repository": "scrapy/scrapy",
+          "error_signature": "2e28f373fbea",
+          "fixing_revision": 38755326985,
+          "run_id": 38750708233,
+          "workflow": "CI",
+          "branch": "nameless-spiders",
+          "job": "tests (ubuntu, pypy3.11-7.3.20, pypy3-extra-deps)",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 38755326985,
+            "commits": 2,
+            "files": 5,
+            "url": "https://github.com/scrapy/scrapy/compare/1da103d62160444a40e47cc46092edb6d89f53da...c3c8f7e7bfaee01fba3052986d5b7283f0175c86"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38747907504",
+          "repository": "scrapy/scrapy",
+          "error_signature": "547b4c0ca113",
+          "fixing_revision": 38753689163,
+          "run_id": 38747907504,
+          "workflow": "CI",
+          "branch": "master",
+          "job": "pre-commit",
+          "failing_step": "Run pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd",
+          "classification": "unclassified",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 38753689163,
+            "commits": 1,
+            "files": 5,
+            "url": "https://github.com/scrapy/scrapy/compare/c04862bf5389aa7ec47f52e36bf84f81e613c1b5...fbfc89ae7b72531a97fb4ef6d65ef3af392aa45c"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38744293001",
+          "repository": "scrapy/scrapy",
+          "error_signature": "547b4c0ca113",
+          "fixing_revision": 38754141153,
+          "run_id": 38744293001,
+          "workflow": "CI",
+          "branch": "auth-creds-from-url",
+          "job": "pre-commit",
+          "failing_step": "Run pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd",
+          "classification": "unclassified",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 38754141153,
+            "commits": 0,
+            "files": 0,
+            "url": "https://github.com/scrapy/scrapy/compare/c42919f9c8497984f90a0c60d05f08f526d5bfdb...c42919f9c8497984f90a0c60d05f08f526d5bfdb"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38743023195",
+          "repository": "scrapy/scrapy",
+          "error_signature": "7d029f3c15d6",
+          "fixing_revision": 38755389508,
+          "run_id": 38743023195,
+          "workflow": "CI",
+          "branch": "pqueue-fixes",
+          "job": "pre-commit",
+          "failing_step": "Run pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd",
+          "classification": "unclassified",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 38755389508,
+            "commits": 3,
+            "files": 10,
+            "url": "https://github.com/scrapy/scrapy/compare/a7d838f4a13d2d4ca50429a4fdbe6094f51a14f4...aa399a4b8bc6f6797e5e1ecc49cd5f772df79243"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38742263562",
+          "repository": "scrapy/scrapy",
+          "error_signature": "6a7c872d3954",
+          "fixing_revision": 38755326985,
+          "run_id": 38742263562,
+          "workflow": "CI",
+          "branch": "nameless-spiders",
+          "job": "pre-commit",
+          "failing_step": "Run pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd",
+          "classification": "unclassified",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 38755326985,
+            "commits": 4,
+            "files": 10,
+            "url": "https://github.com/scrapy/scrapy/compare/0d1494cf107695a080357f44a1c030aa01de9efc...c3c8f7e7bfaee01fba3052986d5b7283f0175c86"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38742263579",
+          "repository": "scrapy/scrapy",
+          "error_signature": "b5fa5f097900",
+          "fixing_revision": 38750708572,
+          "run_id": 38742263579,
+          "workflow": "codspeed-walltime",
+          "branch": "nameless-spiders",
+          "job": "benchmark-walltime",
+          "failing_step": "Set up job",
+          "classification": "unclassified",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 38750708572,
+            "commits": 2,
+            "files": 5,
+            "url": "https://github.com/scrapy/scrapy/compare/0d1494cf107695a080357f44a1c030aa01de9efc...1da103d62160444a40e47cc46092edb6d89f53da"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38741607558",
+          "repository": "scrapy/scrapy",
+          "error_signature": "8c51f3077bb2",
+          "fixing_revision": 38755294314,
+          "run_id": 38741607558,
+          "workflow": "CI",
+          "branch": "keyring",
+          "job": "tests (ubuntu, pypy3.11-7.3.20, pypy3-extra-deps)",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 38755294314,
+            "commits": 6,
+            "files": 29,
+            "url": "https://github.com/scrapy/scrapy/compare/e4c79f6a0c4e304284127c94857ec00a1cedc6a0...f10d618cbd170ea87162953b74ed64a3fcf36fb6"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38738939152",
+          "repository": "scrapy/scrapy",
+          "error_signature": "547b4c0ca113",
+          "fixing_revision": 38755248311,
+          "run_id": 38738939152,
+          "workflow": "CI",
+          "branch": "sync-default-and-template",
+          "job": "tests (ubuntu, pypy3.11-7.3.20, pypy3-extra-deps)",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 38755248311,
+            "commits": 6,
+            "files": 29,
+            "url": "https://github.com/scrapy/scrapy/compare/43684cac587a53cdfd02c7dd3710ab02c8ef14fd...4426fbf2b7f0bb2fbfacf3b9330a38d162ab4bf4"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38738459715",
+          "repository": "scrapy/scrapy",
+          "error_signature": "547b4c0ca113",
+          "fixing_revision": 38753689163,
+          "run_id": 38738459715,
+          "workflow": "CI",
+          "branch": "master",
+          "job": "tests (ubuntu, pypy3.11-7.3.20, min-pypy3)",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 38753689163,
+            "commits": 2,
+            "files": 10,
+            "url": "https://github.com/scrapy/scrapy/compare/dac85847541aee8669885fd95d7ef6893297a815...fbfc89ae7b72531a97fb4ef6d65ef3af392aa45c"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38679486713",
+          "repository": "scrapy/scrapy",
+          "error_signature": "e85bbdd3b861",
+          "fixing_revision": null,
+          "run_id": 38679486713,
+          "workflow": "VCS dependencies",
+          "branch": "master",
+          "job": "tests",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38582201997",
+          "repository": "scrapy/scrapy",
+          "error_signature": "8375475a3065",
+          "fixing_revision": 38598441887,
+          "run_id": 38582201997,
+          "workflow": "CI",
+          "branch": "await-request",
+          "job": "tests (windows, 3.14, extra-deps)",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 38598441887,
+            "commits": 1,
+            "files": 2,
+            "url": "https://github.com/scrapy/scrapy/compare/4d136ebc4902a7903a0798f6d25d962fefd46ca3...438f35c13286a906ffada0a01d64cc4d83953d83"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38569043330",
+          "repository": "scrapy/scrapy",
+          "error_signature": "1aaa7cea3a06",
+          "fixing_revision": 38599919327,
+          "run_id": 38569043330,
+          "workflow": "CI",
+          "branch": "partial-response-on-timeout",
+          "job": "tests (windows, 3.14, no-reactor)",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 38599919327,
+            "commits": 10,
+            "files": 50,
+            "url": "https://github.com/scrapy/scrapy/compare/7cd03eabed58e3612cd010b7ac9cd9ae1afb5a6c...3f1aca48d5ff2bae4a8a11282b72b6a2f24f0d20"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38566607134",
+          "repository": "scrapy/scrapy",
+          "error_signature": "011a3e084a6f",
+          "fixing_revision": 38597259995,
+          "run_id": 38566607134,
+          "workflow": "CI",
+          "branch": "ipv6_proxy_support",
+          "job": "tests (ubuntu, pypy3.11-7.3.20, min-pypy3)",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 38597259995,
+            "commits": 1,
+            "files": 1,
+            "url": "https://github.com/scrapy/scrapy/compare/f48898b1a326f8fecdb8eae689594af2a06577ac...1bb5dd566a2cefaf1130e8277fef3c311d3d14d1"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38566223996",
+          "repository": "scrapy/scrapy",
+          "error_signature": "0eaa8a92f9aa",
+          "fixing_revision": 38598441887,
+          "run_id": 38566223996,
+          "workflow": "CI",
+          "branch": "await-request",
+          "job": "tests (windows, 3.15.0-rc.1, py)",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 38598441887,
+            "commits": 2,
+            "files": 3,
+            "url": "https://github.com/scrapy/scrapy/compare/f8c3d05c4181110fd49b8dd74abbe67a78702419...438f35c13286a906ffada0a01d64cc4d83953d83"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38563576509",
+          "repository": "scrapy/scrapy",
+          "error_signature": "8cd2156b1707",
+          "fixing_revision": null,
+          "run_id": 38563576509,
+          "workflow": "CI",
+          "branch": "reactor-lag-monitor",
+          "job": "tests (ubuntu, pypy3.11-7.3.20, pypy3-extra-deps)",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 38568696993,
+            "commits": 30,
+            "files": 160,
+            "url": "https://github.com/scrapy/scrapy/compare/62c0bb61b051c404ed644aeef36e157976f07390...d006c39231caf0c0d30736ff06d5de87c12392c5"
+          },
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38509499697",
+          "repository": "scrapy/scrapy",
+          "error_signature": "4ec3c797b4ab",
+          "fixing_revision": null,
+          "run_id": 38509499697,
+          "workflow": "VCS dependencies",
+          "branch": "master",
+          "job": "tests",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38409542535",
+          "repository": "scrapy/scrapy",
+          "error_signature": "1d4bf155aa5f",
+          "fixing_revision": 38426316676,
+          "run_id": 38409542535,
+          "workflow": "CI",
+          "branch": "master",
+          "job": "tests (ubuntu, 3.11.17, min-extra-deps)",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 38426316676,
+            "commits": 1,
+            "files": 2,
+            "url": "https://github.com/scrapy/scrapy/compare/53b34f729334cc5c6950eac5c49470281fcbecb5...a0951524990e4c43b1b4e8a3783942a0ad95ce7f"
+          },
+          "repair_linked": true
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38392037381",
+          "repository": "scrapy/scrapy",
+          "error_signature": "9af2b1010713",
+          "fixing_revision": null,
+          "run_id": 38392037381,
+          "workflow": "CI",
+          "branch": "tests-setting-docs",
+          "job": "tests (windows, 3.15.0-rc.1, py)",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38345016137",
+          "repository": "scrapy/scrapy",
+          "error_signature": "93700a4f42f4",
+          "fixing_revision": null,
+          "run_id": 38345016137,
+          "workflow": "VCS dependencies",
+          "branch": "master",
+          "job": "tests",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38202840774",
+          "repository": "scrapy/scrapy",
+          "error_signature": "1af60ea2f544",
+          "fixing_revision": null,
+          "run_id": 38202840774,
+          "workflow": "VCS dependencies",
+          "branch": "master",
+          "job": "tests",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38110489876",
+          "repository": "scrapy/scrapy",
+          "error_signature": "62c5478b6d6f",
+          "fixing_revision": null,
+          "run_id": 38110489876,
+          "workflow": "VCS dependencies",
+          "branch": "master",
+          "job": "tests",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": null,
+          "repair_linked": false
+        },
+        {
+          "log_id": "gh_scrapy_scrapy_38059353925",
+          "repository": "scrapy/scrapy",
+          "error_signature": "ef77864b1bdf",
+          "fixing_revision": 38060570275,
+          "run_id": 38059353925,
+          "workflow": "CI",
+          "branch": "typing-extensions-3.12",
+          "job": "tests (ubuntu, pypy3.11-7.3.20, min-pypy3)",
+          "failing_step": "Run tests",
+          "classification": "build_test",
+          "log_available": true,
+          "repair": {
+            "passing_run_id": 38060570275,
+            "commits": 1,
+            "files": 2,
+            "url": "https://github.com/scrapy/scrapy/compare/97e8c451c41ace47dffe6704e22a03a3fc48a5d4...1d0b6179a3f7fd6068d9ec9a61a961af4d1bf071"
+          },
+          "repair_linked": true
+        }
+      ],
+      "criteria": [
+        {
+          "criterion": "1  Failed runs with downloadable logs",
+          "value": "30 / 30",
+          "reference": true,
+          "requirement": "need >= 30"
+        },
+        {
+          "criterion": "2  Build, test, dependency, config or environment",
+          "value": "23 / 30",
+          "reference": true,
+          "requirement": "need >= half"
+        },
+        {
+          "criterion": "3  Cases linkable to a repair",
+          "value": "18 / 30",
+          "reference": true,
+          "requirement": "need >= 15"
+        },
+        {
+          "criterion": "4  Not dominated by one workflow",
+          "value": "21 / 30 (CI)",
+          "reference": false,
+          "requirement": "need <= half"
+        }
+      ],
+      "references_met": 3,
+      "family_rules": [
+        {
+          "rule": "fix",
+          "cases": 30,
+          "families": 27,
+          "singletons": 24,
+          "largest_family": 2,
+          "duplicate_cases": 3,
+          "basis_counts": {
+            "shared repair": 15,
+            "singleton": 12
+          }
+        },
+        {
+          "rule": "signature",
+          "cases": 30,
+          "families": 27,
+          "singletons": 26,
+          "largest_family": 4,
+          "duplicate_cases": 3,
+          "basis_counts": {
+            "shared error signature": 27
+          }
+        },
+        {
+          "rule": "job_step",
+          "cases": 30,
+          "families": 28,
+          "singletons": 26,
+          "largest_family": 2,
+          "duplicate_cases": 2,
+          "basis_counts": {
+            "recurring job and step": 28
+          }
+        },
+        {
+          "rule": "combined",
+          "cases": 30,
+          "families": 25,
+          "singletons": 22,
+          "largest_family": 4,
+          "duplicate_cases": 5,
+          "basis_counts": {
+            "shared repair": 13,
+            "shared error signature": 12
+          }
+        }
+      ],
+      "families": {
+        "rule": "combined",
+        "cases": 30,
+        "families": 25,
+        "singletons": 22,
+        "largest_family": 4,
+        "duplicate_cases": 5,
+        "basis_counts": {
+          "shared repair": 13,
+          "shared error signature": 12
+        }
+      },
+      "classification_counts": {
+        "build_test": 23,
+        "lint_format": 1,
+        "docs": 1,
+        "unclassified": 5
+      }
+    }
+  ]
+}

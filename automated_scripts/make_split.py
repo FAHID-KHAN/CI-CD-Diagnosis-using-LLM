@@ -40,6 +40,19 @@ from src.evaluation.failure_families import assign_families, build_families, che
 PARTITIONS = ("development", "pilot", "held_out")
 DEFAULT_TARGETS = {"development": 15, "pilot": 15, "held_out": 50}
 
+# Cases beyond every partition's target. A held-out set larger than can be
+# annotated is not a larger held-out set, it is an undefined one: scoring needs
+# ground truth, so unannotated cases parked in held_out would leave the
+# confirmatory set to be decided case by case during annotation. Naming the
+# surplus instead fixes held_out at its declared size.
+#
+# The reserve is outside the confirmatory analysis. Moving a case from reserve
+# into held_out after any held-out result has been seen would make the held-out
+# set a function of those results, so a later extension needs a new split
+# manifest recording the reason, exactly as a re-split does.
+RESERVE = "reserve"
+BUCKETS = (*PARTITIONS, RESERVE)
+
 
 def allocate(cases: List[dict], targets: Dict[str, int], rule: str, seed: int) -> Dict[str, List[str]]:
     """Assign whole families to partitions, keeping repositories proportional.
@@ -63,7 +76,7 @@ def allocate(cases: List[dict], targets: Dict[str, int], rule: str, seed: int) -
         per_repository[repository].append(family)
 
     total_cases = len(by_case)
-    allocation: Dict[str, List[str]] = {name: [] for name in PARTITIONS}
+    allocation: Dict[str, List[str]] = {name: [] for name in BUCKETS}
 
     for repository in sorted(per_repository):
         group = per_repository[repository]
@@ -71,13 +84,13 @@ def allocate(cases: List[dict], targets: Dict[str, int], rule: str, seed: int) -
         share = repository_cases / total_cases if total_cases else 0
         # This repository's slice of each partition's target.
         quota = {name: targets[name] * share for name in PARTITIONS}
-        filled = {name: 0 for name in PARTITIONS}
+        filled = {name: 0 for name in BUCKETS}
 
         random.Random(f"{seed}:{repository}").shuffle(group)
         for family in group:
             # First partition, in priority order, that is still below its share.
-            # Everything after the quotas are met falls to the last partition.
-            chosen = PARTITIONS[-1]
+            # Everything after every quota is met becomes reserve, not held-out.
+            chosen = RESERVE
             for name in PARTITIONS:
                 if filled[name] < quota[name]:
                     chosen = name
@@ -91,15 +104,15 @@ def allocate(cases: List[dict], targets: Dict[str, int], rule: str, seed: int) -
 def summarise(allocation: Dict[str, List[str]], cases: List[dict], targets: Dict[str, int]) -> List[dict]:
     by_case = {case["log_id"]: case for case in cases if case.get("log_id")}
     rows = []
-    for name in PARTITIONS:
+    for name in BUCKETS:
         ids = allocation[name]
         repositories = collections.Counter(by_case.get(case_id, {}).get("repository", "?") for case_id in ids)
         rows.append(
             {
                 "partition": name,
-                "target": targets[name],
+                "target": targets.get(name, 0),
                 "allocated": len(ids),
-                "shortfall": max(0, targets[name] - len(ids)),
+                "shortfall": max(0, targets.get(name, 0) - len(ids)),
                 "by_repository": dict(repositories),
             }
         )
@@ -167,7 +180,7 @@ def main() -> int:
             print(f"    {breach['family_id']}: {', '.join(sorted(breach['partitions']))}")
         return 1
     print("  No family spans more than one partition.")
-    total_short = sum(row["shortfall"] for row in rows)
+    total_short = sum(row["shortfall"] for row in rows if row["partition"] in PARTITIONS)
     if total_short:
         print(f"  WARNING: {total_short} case(s) short of the targets. Collect more rather than")
         print("           weakening the eligibility rules.")
@@ -187,6 +200,7 @@ def main() -> int:
         "targets": targets,
         "source": {"file": str(cohort_path), "sha256": sha256_file(cohort_path), "case_count": len(cases)},
         "partitions": allocation,
+        "reserve_is_outside_the_confirmatory_analysis": True,
         "summary": rows,
         "family_count": len(set(assignment.values())),
         "family_of_case": assignment,

@@ -1,0 +1,155 @@
+# Two-repository protocol for the held-out thesis evaluation (kickoff decision D2).
+#
+# A new study_id rather than an edit to thesis_gradle_scrapy_2026: collection is
+# immutable and the manifests record the config checksum that produced them, so
+# changing the pair in place would break the provenance of the earlier cohort.
+# thesis_pair_2026 and thesis_gradle_scrapy_2026 are retained as the record of
+# the django and gradle attempts.
+#
+# Pair rationale. scrapy/scrapy contributes Python test failures via pytest;
+# vitejs/vite contributes JavaScript build and test failures via Vitest and
+# pnpm. They contrast on language, package manager, test framework and log
+# convention.
+#
+# Why gradle/gradle was replaced (plan §3.1 requires this to be explained).
+# Twenty-five of its 36 eligible cases were umbrella jobs -- "Sanity Check on
+# Linux" and a sixteen-module "(Unit Test)" aggregate -- which report many
+# independent failures under one job name and so have no single root cause to
+# annotate. All 25 exceeded 40,000 log lines and lost every verified evidence
+# line in filtering; all 11 single-purpose gradle jobs were under that size and
+# lost none. Excluding umbrella jobs leaves roughly six diagnosable gradle
+# cases. Triage now applies that exclusion directly: see is_umbrella_job in
+# src/evaluation/job_scope.py.
+#
+# Why the replacement is not JVM. Five JVM candidates were measured and none is
+# tractable: netty/netty 1,324,878 lines on its one genuine Build PR sample,
+# apache/dubbo 3.5M, micronaut-core 53,574, mockito/mockito 26,650 with most
+# logs already expired. Large JVM projects build and test every module in one
+# job, which is the structure that made gradle unusable. The ecosystem contrast
+# is therefore Python versus JavaScript, and that limit is a result to report
+# rather than a compromise to conceal.
+#
+# Repository gate, 18 October 2026 (tools/check_repository_gate.py, 30 inspected
+# failures per repository; full record in
+# docs/thesis/measurements/repository_gate_2026-10-18.json):
+#
+#   criterion                        vitejs/vite   scrapy/scrapy   threshold
+#   1 logs downloadable                    30/30           30/30   >= 30
+#   2 build/test/dep/config/env            24/30           23/30   >= half
+#   3 linkable to a repair                  5/30           18/30   >= 15
+#   4 not dominated by one workflow   30/30 (CI)      21/30 (CI)   <= half
+#
+#   distinct families under 'combined'         27              25
+#   distinct error signatures                  30              27
+#
+# Two criteria are not met for vite and both readings are wrong as printed.
+#
+# Criterion 3 is a recency artifact. Repair linkage is found by looking for a
+# later passing run of the same workflow on the same branch, so it needs time to
+# have elapsed. vite produces 100 failed runs in two days, so its most recent 30
+# are almost all too new to have been repaired yet. Measured on runs from
+# 30 September to 1 October instead, vite is 15/30 -- at the threshold, and
+# comparable to scrapy's recent 18/30. The same test applied to scrapy's older
+# runs gives 4/30, because 28 of those 30 came from fork branches that no longer
+# exist. The criterion is unstable with respect to sampling window and fork
+# ratio, and the gate's default of "most recent 30" systematically penalises any
+# repository with high failure throughput.
+#
+# Criterion 4 is contradicted by the family counts in the same report. vite
+# shows 30 distinct error signatures out of 30 inspected runs and 30 distinct
+# job_step keys -- the highest diversity of any repository measured here. The
+# single-workflow figure reflects that vite organises all of its CI in one
+# workflow file, which is a packaging choice, not repeated failures.
+#
+# Known consequence, recorded because it affects the taxonomy. Both
+# repositories are test-heavy: vite 24 of 30 build_test with failing steps
+# concentrated on "Test serve" and "Test serve (bundled dev)", scrapy 23 of 30
+# build_test. This pair will not populate eight failure categories evenly, and
+# the existing annotation already skews that way (20 of 27 were test_failure).
+# That is evidence for the open decision on whether to keep eight categories or
+# reduce them; it is not a reason to select a repository by predicted category,
+# which would be circular.
+#
+# Target arithmetic. Measured yield for vite is 0.83 distinct cases per raw run
+# inspected: of 24 inspected runs, 20 were in scope with a downloadable log and
+# all 20 had distinct error signatures, so the duplicate cap removed nothing.
+# Matrix breadth does not reduce this, because matrix entries are jobs within a
+# single run and one run contributes one case. Fault diversity is high -- 84
+# distinct commits across 100 failed runs, against scrapy's 73.
+#
+# vite is therefore capped at 60 rather than 100. At 100 the pair would yield
+# roughly 125 eligible cases against a split target of 80, and annotation, not
+# collection, is the binding constraint on this study: every surplus case is
+# human reading time. 60 plus scrapy's 100 should land near 90, leaving margin
+# for exclusions without creating work that will not be used.
+#
+# The eligible range below is deliberately wide. A count far outside it means
+# the yield assumption no longer holds and should be re-examined rather than
+# absorbed silently.
+study_id: thesis_scrapy_vite_2026
+title: Two-repository contrasting GitHub Actions failure dataset (Python and JavaScript)
+source: github_actions
+unit_of_analysis: failed_workflow_run
+sampling_method: failed_runs_within_a_fixed_age_window_per_repository
+auto_discovery: false
+target_raw_logs: 160
+target_eligible_logs:
+  minimum: 35
+  maximum: 160
+
+# Sampling frame. Failed runs are drawn from an age window rather than from the
+# newest runs, because repair traceability is what the ground-truth standard in
+# plan §10(c) rests on and the newest runs have the least of it: a repair is
+# found by looking for a later passing run, so the failure must have had time to
+# be fixed. Measured 18 October 2026, repair-linked share of the first 20 runs
+# in each window:
+#
+#   window            vitejs/vite   scrapy/scrapy   runs available
+#   0-7 days old            5/20           11/20      155 / 44
+#   14-45 days old         10/20           17/20      261 / 284
+#   45-80 days old          8/20            4/20      440 / 287
+#
+# Beyond about 45 days the rate falls again: GitHub expires logs at around 90
+# days and the branches a repair would appear on have often been deleted.
+# Availability inside the chosen window far exceeds the 160 runs needed.
+#
+# The collection manifest records the resolved absolute dates, not these ages.
+# "14 to 45 days ago" denotes a different interval every day it is run, so only
+# the absolute range makes the frame reproducible, and a resumed collection
+# reuses the recorded range rather than recomputing it.
+sampling_window_days:
+  minimum_age: 14
+  maximum_age: 45
+
+repositories:
+  - name: scrapy/scrapy
+    max_logs: 100
+    ecosystem: python
+  - name: vitejs/vite
+    max_logs: 60
+    ecosystem: javascript
+
+eligibility:
+  required_conclusion: failure
+  minimum_log_lines: 20
+  maximum_duplicate_error_signatures_per_repository: 2
+  require_downloadable_log: true
+  family_rule: combined
+
+exclusions:
+  - cancelled_run
+  - token_error
+  - too_short
+  - duplicate_error
+  - duplicate_failure_family
+  - unavailable_log
+  - bot_generated_run
+  - no_job_executed
+  - out_of_scope_job
+  - umbrella_job
+
+research_controls:
+  use_fixed_repository_list: true
+  preserve_raw_logs: true
+  blind_annotation: true
+  do_not_tune_on_final_dataset: true

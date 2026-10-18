@@ -23,7 +23,7 @@ from automated_scripts.study_utils import (
     study_directory,
     utc_now,
 )
-from src.data_collection.data_collection import GitHubActionsCollector
+from src.data_collection.data_collection import GitHubActionsCollector, created_window
 
 
 def parse_args():
@@ -116,7 +116,13 @@ def main() -> int:
     owner, repo = repository.split("/", 1)
     print(f"\nDownloading one failed workflow log from {repository}...")
     try:
-        logs = GitHubActionsCollector(token).collect_logs_from_repo(owner, repo, num_logs=1)
+        # Sample inside the protocol's frame, so the preflight log is drawn from
+        # the same population collection will use.
+        window = config.get("sampling_window_days") or {}
+        created = (
+            created_window(int(window["minimum_age"]), int(window["maximum_age"])) if window else None
+        )
+        logs = GitHubActionsCollector(token).collect_logs_from_repo(owner, repo, num_logs=1, created=created)
     except Exception as exc:
         print(f"ERROR: Live GitHub check failed: {exc}")
         return 1

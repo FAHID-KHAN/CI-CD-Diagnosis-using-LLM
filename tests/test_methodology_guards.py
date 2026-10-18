@@ -2,6 +2,8 @@
 
 import json
 import os
+from datetime import date
+from unittest import mock
 
 import pytest
 
@@ -13,7 +15,8 @@ from src.evaluation.category_metrics import (
     macro_f1,
 )
 from src.evaluation.ground_truth_audit import audit_annotations, audit_ground_truth_file, root_cause_problem
-from src.evaluation.job_scope import is_bot_run, is_in_scope, is_umbrella_job
+from src.evaluation.job_scope import is_bot_run, is_excluded, is_in_scope, is_umbrella_job
+from src.data_collection.data_collection import GitHubActionsCollector, created_window
 
 # ── D4: development and pilot cases must not reach the held-out set ────────
 
@@ -857,8 +860,11 @@ def test_every_repository_appears_in_every_partition():
     allocation = allocate(cases, {"development": 15, "pilot": 15, "held_out": 30}, "signature", seed=7)
 
     by_case = {case["log_id"]: case for case in cases}
-    for partition, ids in allocation.items():
-        repositories = {by_case[case_id]["repository"] for case_id in ids}
+    from automated_scripts.make_split import PARTITIONS
+
+    # The reserve is surplus and carries no representativeness requirement.
+    for partition in PARTITIONS:
+        repositories = {by_case[case_id]["repository"] for case_id in allocation[partition]}
         assert repositories == {"org/one", "org/two"}, f"{partition} lost a repository"
 
 
@@ -1273,3 +1279,117 @@ def test_maintenance_automation_is_recognised_as_a_bot_run():
 
 def test_a_human_build_failure_is_not_a_bot_run():
     assert is_bot_run({"workflow_name": "Contributor CI Build", "failing_job": "Compile All"}) is False
+
+
+# ── Sampling frame: ground truth needs repairs to exist before it is annotated ──
+
+
+def test_the_sampling_window_resolves_to_absolute_dates():
+    """A cohort's frame must be a fixed interval, not an age relative to today."""
+    assert created_window(14, 45, today=date(2026, 10, 18)) == "2026-09-03..2026-10-04"
+
+
+def test_the_window_is_ordered_oldest_to_newest():
+    older, newer = created_window(7, 30, today=date(2026, 10, 18)).split("..")
+    assert older < newer
+
+
+def test_an_inverted_or_negative_window_is_refused():
+    """Failing loudly here beats silently collecting from the wrong population."""
+    for bad in ((45, 14), (10, 10), (-1, 30)):
+        with pytest.raises(ValueError):
+            created_window(*bad, today=date(2026, 10, 18))
+
+
+def test_the_collector_requests_the_window_it_is_given():
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"workflow_runs": []}
+
+    def fake_request(method, url, **kwargs):
+        captured.update(kwargs.get("params") or {})
+        return FakeResponse()
+
+    collector = GitHubActionsCollector("token")
+    with mock.patch("src.data_collection.data_collection._request_with_retry", fake_request):
+        collector.get_workflow_runs("owner", "repo", 100, created="2026-09-03..2026-10-04")
+    assert captured["created"] == "2026-09-03..2026-10-04"
+    assert captured["status"] == "failure"
+
+
+def test_no_window_means_no_created_parameter():
+    """Absent a declared frame the collector must not invent one."""
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"workflow_runs": []}
+
+    def fake_request(method, url, **kwargs):
+        captured.update(kwargs.get("params") or {})
+        return FakeResponse()
+
+    collector = GitHubActionsCollector("token")
+    with mock.patch("src.data_collection.data_collection._request_with_retry", fake_request):
+        collector.get_workflow_runs("owner", "repo", 100)
+    assert "created" not in captured
+
+
+def test_static_analysis_jobs_are_out_of_scope():
+    """scrapy names these "checks (3.10, mypy)", and "check" is an in-scope word.
+
+    Without an explicit pattern they classify as build_test, which is how
+    django's "Run Quality Checks on a PR" reached an eligible cohort.
+    """
+    for job in ("checks (3.10, mypy)", "checks (3.11, mypy)", "typecheck", "pyright"):
+        assert is_excluded(job, "Run check") is True, job
+
+
+def test_pre_commit_is_out_of_scope():
+    """It runs whatever hooks a repository configures, mostly lint, many at once."""
+    assert is_excluded("pre-commit", "Run pre-commit/action@2c") is True
+
+
+def test_genuine_test_jobs_are_still_in_scope():
+    for job, step in (
+        ("tests (ubuntu, 3.12, py)", "Run tests"),
+        ("Build&Test: node-24, windows-latest", "Test serve"),
+        ("Compile All", ""),
+    ):
+        assert is_excluded(job, step) is False, job
+        assert is_in_scope(job, step) is True, job
+
+
+def test_surplus_becomes_reserve_rather_than_inflating_held_out():
+    """held_out must stay the size it was declared, or it is not a defined set.
+
+    Scoring needs ground truth, so surplus parked in held_out would leave the
+    confirmatory set to be chosen case by case during annotation.
+    """
+    from automated_scripts.make_split import RESERVE, allocate
+
+    cases = [_split_case(f"c{i}", "org/one", f"sig{i}") for i in range(99)]
+    targets = {"development": 10, "pilot": 10, "held_out": 30}
+    allocation = allocate(cases, targets, "signature", seed=11)
+
+    assert len(allocation["held_out"]) <= 30
+    assert len(allocation[RESERVE]) == 99 - sum(len(allocation[n]) for n in ("development", "pilot", "held_out"))
+    assert sum(len(ids) for ids in allocation.values()) == 99
+
+
+def test_no_family_straddles_the_reserve_and_a_partition():
+    """A reserved case sharing a fault with a held-out case would leak it back in."""
+    from automated_scripts.make_split import allocate
+    from src.evaluation.failure_families import assign_families, check_no_family_spans_partitions
+
+    cases = [_split_case(f"c{i}", "org/one", f"sig{i // 3}") for i in range(60)]
+    allocation = allocate(cases, {"development": 5, "pilot": 5, "held_out": 10}, "signature", seed=13)
+    assert check_no_family_spans_partitions(allocation, assign_families(cases, "signature")) == []

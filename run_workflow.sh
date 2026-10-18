@@ -14,7 +14,11 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VENV_DIR="${PROJECT_DIR}/.venv"
-STUDY_CONFIG="configs/thesis_fresh_2026.yaml"
+# The active study protocol. Every stage runs against this unless
+# --study-config overrides it, so it must name the current cohort: a stale
+# default would silently collect into the wrong study, and study directories
+# are immutable once written.
+STUDY_CONFIG="configs/thesis_scrapy_vite_2026.yaml"
 SMOKE_ROOT="data/studies/system_smoke_001"
 SKIP_INSTALL=false
 SKIP_LIVE_PREFLIGHT=false

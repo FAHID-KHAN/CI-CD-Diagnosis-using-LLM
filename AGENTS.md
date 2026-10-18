@@ -74,7 +74,7 @@ was written still reports correctly. Keep it that way.
 ```
 
 Tests are offline and must stay that way — they never call GitHub, OpenAI or
-Ollama. There are 143 of them.
+Ollama. There are 153 of them.
 
 Add tests for anything that enforces a methodological rule: leakage guards,
 ground-truth audits, scoring. `tests/test_methodology_guards.py` is the home for

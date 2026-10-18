@@ -7,7 +7,7 @@ import io
 import logging
 import time
 import zipfile
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 import requests
@@ -41,6 +41,29 @@ def _request_with_retry(
     raise RuntimeError("GitHub request retries exhausted")
 
 
+def created_window(minimum_age_days: int, maximum_age_days: int, today: Optional[date] = None) -> str:
+    """Build GitHub's ``created`` range for runs between two ages, in days.
+
+    Sampling the newest failed runs is the worst choice for ground truth. A
+    repair is found by looking for a later passing run, so a failure needs time
+    to have been fixed before the repair exists to be read. Measured on
+    18 October 2026: in a 0-7 day window 5 of 20 vite runs had a findable
+    repair, against 10 of 20 in a 14-45 day window; scrapy went from 11 of 20 to
+    17 of 20. Beyond about 45 days the rate falls again, because GitHub expires
+    logs at around 90 days and branches are deleted.
+
+    The caller must record the resolved dates, not the ages. "14 to 45 days ago"
+    denotes a different interval every day it is run, so only the absolute range
+    makes a cohort's sampling frame reproducible.
+    """
+    if minimum_age_days < 0 or maximum_age_days <= minimum_age_days:
+        raise ValueError(f"invalid sampling window: {minimum_age_days}..{maximum_age_days} days")
+    reference = today or datetime.now(timezone.utc).date()
+    newest = reference - timedelta(days=minimum_age_days)
+    oldest = reference - timedelta(days=maximum_age_days)
+    return f"{oldest.isoformat()}..{newest.isoformat()}"
+
+
 class GitHubActionsCollector:
     """Download failed GitHub Actions workflow logs with provenance metadata."""
 
@@ -58,11 +81,12 @@ class GitHubActionsCollector:
         repo: str,
         num_logs: int,
         exclude_run_ids: Optional[set[int]] = None,
+        created: Optional[str] = None,
     ) -> List[Dict]:
         excluded = exclude_run_ids or set()
         # Inspect up to one API page so unavailable or preflight-excluded runs
         # do not prevent the collector from reaching the requested count.
-        runs = self.get_workflow_runs(owner, repo, max(100, num_logs + len(excluded)))
+        runs = self.get_workflow_runs(owner, repo, max(100, num_logs + len(excluded)), created=created)
         collected: List[Dict] = []
 
         for run in runs:
@@ -132,13 +156,27 @@ class GitHubActionsCollector:
         # failure, which produces no log and nothing to diagnose.
         return {"failing_job": "", "failing_step": "", "job_count": len(jobs)}
 
-    def get_workflow_runs(self, owner: str, repo: str, max_runs: int) -> List[Dict]:
+    def get_workflow_runs(
+        self,
+        owner: str,
+        repo: str,
+        max_runs: int,
+        created: Optional[str] = None,
+    ) -> List[Dict]:
+        """List failed runs, optionally restricted to a ``created`` date range.
+
+        Without *created* GitHub returns the newest failed runs, which is the
+        window with the least repair traceability -- see ``created_window``.
+        """
         url = f"{self.base_url}/repos/{owner}/{repo}/actions/runs"
+        params: Dict[str, object] = {"status": "failure", "per_page": min(100, max(1, max_runs))}
+        if created:
+            params["created"] = created
         response = _request_with_retry(
             "GET",
             url,
             headers=self.headers,
-            params={"status": "failure", "per_page": min(100, max(1, max_runs))},
+            params=params,
             timeout=20,
         )
         if response.status_code != 200:

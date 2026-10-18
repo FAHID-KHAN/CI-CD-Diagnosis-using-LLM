@@ -28,7 +28,7 @@ from automated_scripts.study_utils import (
     study_directory,
     utc_now,
 )
-from src.data_collection.data_collection import GitHubActionsCollector
+from src.data_collection.data_collection import GitHubActionsCollector, created_window
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
@@ -54,6 +54,23 @@ def main() -> int:
         print(f"ERROR: Invalid study protocol: {exc}")
         return 1
 
+    window = config.get("sampling_window_days") or {}
+    sampling_window: dict | None = None
+    if window:
+        try:
+            created = created_window(int(window["minimum_age"]), int(window["maximum_age"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            print(f"ERROR: Invalid sampling_window_days in the study protocol: {exc}")
+            return 1
+        sampling_window = {
+            "minimum_age_days": int(window["minimum_age"]),
+            "maximum_age_days": int(window["maximum_age"]),
+            "created_range": created,
+            "resolved_at": utc_now(),
+        }
+    else:
+        created = None
+
     root = study_directory(config, args.study_dir)
     raw_path = root / "raw" / "logs.json"
     manifest_path = root / "collection_manifest.json"
@@ -75,6 +92,17 @@ def main() -> int:
             print("ERROR: The raw study collection is complete and immutable.")
             return 1
         logs = json.loads(raw_path.read_text(encoding="utf-8"))
+        # Reuse the frame the interrupted run established. Recomputing it would
+        # move the window by however long the interruption lasted, so a resumed
+        # cohort would be drawn from two different sampling frames.
+        stored = manifest.get("sampling_window") or {}
+        if stored.get("created_range"):
+            created = stored["created_range"]
+            print(f"Resuming within the recorded sampling frame {created}")
+        elif created:
+            print("ERROR: The interrupted collection recorded no sampling frame, but the")
+            print("protocol now declares one. Resuming would mix two frames; start a new study_id.")
+            return 1
     else:
         if raw_path.exists() or manifest_path.exists():
             print(f"ERROR: Study output already exists under {root}.")
@@ -92,6 +120,10 @@ def main() -> int:
             "source": "GitHub Actions API",
             "study_config_source": str(config_path),
             "study_config_sha256": sha256_file(config_path),
+            # The sampling frame as absolute dates. The config states it as an age
+            # range, which denotes a different interval every day, so the resolved
+            # range is what makes this cohort's frame reproducible.
+            "sampling_window": sampling_window,
             "git_commit": git_commit(),
             "runtime": {
                 "python": platform.python_version(),
@@ -134,7 +166,11 @@ def main() -> int:
             excluded_ids = existing_ids | preflight_exclusions.get(repository, set())
             print(f"[{index}/{len(config['repositories'])}] {repository}: need {remaining}/{target}")
             try:
-                new_logs = collector.collect_logs_from_repo(owner, repo, remaining, excluded_ids) if remaining else []
+                new_logs = (
+                    collector.collect_logs_from_repo(owner, repo, remaining, excluded_ids, created=created)
+                    if remaining
+                    else []
+                )
                 logs.extend(new_logs)
                 manifest["collection_errors"] = [
                     error for error in manifest["collection_errors"] if error["repository"] != repository
