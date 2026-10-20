@@ -29,7 +29,7 @@ Two open decisions from the plan are therefore closed: the baseline is in scope
 | # | From | Requirement | In the plan? |
 | --- | --- | --- | --- |
 | R1 | Q1 | Report the final case distribution by repository **and** by failure category | No — add to §5 |
-| R2 | Q2 | The final report must explain why Gradle was retained or replaced | No — add to §3.1 |
+| R2 | Q2 | The final report must explain why Gradle was retained or replaced | Yes — §3.1, with the measurements behind the decision |
 | R3 | Q3 | Document the reviewer **selection procedure** | No |
 | R4 | Q3 | Give the reviewer the rubric, annotation instructions and **calibration examples** before independent work begins | No |
 | R5 | Q3 | Preserve the original independent labels even after a consensus label is created | Implemented, §4 below |

@@ -22,11 +22,11 @@ Supervisors: Jussi Rasku, Md Mahade Hasan. Thesis seminar: 9 November 2026.
 
 | | |
 | --- | --- |
-| Code | Complete. 164 tests, lint and type checks pass. |
-| Study data | `thesis_scrapy_vite_2026` is the study cohort: 131 raw, 81 eligible after re-triage, re-split (11 / 11 / 31 plus 28 reserve), **11 of 53 annotated** -- all development; the five scrapy ones are verified, the six vite ones need redoing. Superseded: `thesis_pair_2026` (27 annotations, all void -- django and gradle both dropped) and `thesis_gradle_scrapy_2026` (78 eligible, never annotated). |
+| Code | Complete. 170 tests, lint and type checks pass. |
+| Study data | `thesis_scrapy_vite_2026` is the study cohort: 131 raw, 81 eligible after re-triage, re-split (11 / 11 / 31 plus 28 reserve), **11 of 53 annotated** -- all development, all verified in the correct frame, mean preprocessing recall 91%. One paired development run complete. Superseded: `thesis_pair_2026` (27 annotations, all void -- django and gradle both dropped) and `thesis_gradle_scrapy_2026` (78 eligible, never annotated). |
 | Repositories | scrapy/scrapy and vitejs/vite, decided 18 October 2026 |
 | Active config | `configs/thesis_scrapy_vite_2026.yaml` — scrapy/scrapy (100) and vitejs/vite (60). No cohort collected from it yet. |
-| Next | Redo the six vite annotations, then `./run_workflow.sh develop` |
+| Next | Read the codebook, then annotate the 11 pilot cases |
 | Blocked on | Supervisor approval of the evaluation method; the held-out run stays gated |
 
 Check the live state at any time:
@@ -620,10 +620,12 @@ missing, because two of the three have a gap that will not close by itself.
 
 ### Proposed revision, 18 October 2026 -- not yet sent to supervisors
 
-`EVALUATION_PLAN.md` §3 still carries the original wording. These are drafted
-replacements; §3 is deliberately untouched because it states the proposals in
-the author's own words and the revision is a request to supervisors, not a
-decision already taken.
+**Applied to `EVALUATION_PLAN.md` §3 on 21 October 2026.** The original wording
+is kept beside it in §3.2 so the change is visible, and §3.2 states plainly that
+the revision is a request rather than a decision already taken. §3.1 was written
+at the same time to cover repository retention and replacement, which condition
+R2 requires and which four documents already referenced as §3.1 although it did
+not exist; the revised wording moved to §3.2 rather than taking that number.
 
 > **Primary.** How accurately can an LLM-based system identify the category of a
 > CI/CD pipeline failure and the log lines evidencing it, relative to a
@@ -1022,8 +1024,8 @@ the five scrapy cases whose annotations are verified correct:
 | 36330213779 | 47,019 | 1,056 | 0% | 100% |
 | 35055489720 | 5,250 | 1,177 | 40% | 50% |
 
-The residual loss is token truncation inside the section: the scoped prompts
-still reach about 11,970 tokens against the 12,000 budget.
+The residual loss was token truncation inside the section, and most of it was
+not log content at all -- see the next section.
 
 **Three consequences for the thesis.** The ~40,000-line boundary largely
 dissolves, because what bounds the system is the failing job's size rather than
@@ -1045,7 +1047,53 @@ them would let the model's view and the annotated numbers drift apart. This is
 the same lesson as `is_bot_run` sitting in `tools/` where triage could not see
 it.
 
-## Six vite annotations point at the wrong matrix entry
+### Terminal escape codes were spending the token budget
+
+vite's test output carries thousands of colour and cursor sequences
+(`\x1b[41m\x1b[1m FAIL `), and nothing stripped them before the log reached the
+model. They tell the model nothing and they cost budget.
+
+Stripping them per line, measured over the eleven development cases, lifted mean
+preprocessing recall from **80% to 91%** and took the worst case from 3% to
+100%. `strip_ansi` and `ANSI_ESCAPE` live in `src/api/filtering.py`. Stripping
+is per line, so line numbers do not move -- a test asserts the failing line keeps
+its original number, because the model's `[Line N]` markers and the annotated
+evidence have to stay in one frame.
+
+**`compute_error_signature` in `automated_scripts/triage.py` keeps its own
+narrower escape-code pattern on purpose.** Widening it there would change every
+error signature, which changes which cases the duplicate cap removes, which
+changes the collected cohort. A comment beside the new pattern records this so
+the two are not unified later by someone tidying up.
+
+### The token budget is now a hard invariant
+
+`_truncate_to_tokens` trimmed from the middle until head and tail were five lines
+each and then stopped. A log whose individual lines are enormous therefore
+escaped the limit: `gh_vitejs_vite_36550600858`, in the pilot partition, returned
+a **24,246-token** prompt against a 12,000 budget. With about 4,900 tokens of
+prompt overhead that needed roughly 29,000 against the local model's 17,408, so
+it would have failed or been silently cut by the provider mid-run.
+
+It now clips to the budget as a last resort rather than returning a prompt that
+cannot be served. Clipping can cost the final `[Line N]` marker, which is
+accepted: a truncated marker is recoverable, an unservable prompt is not. After
+both changes the largest filtered prompt across all 81 cases is 11,997 tokens and
+none exceeds the budget.
+
+### What the development set finally measures
+
+| stage | mean recall | cases losing all evidence |
+| --- | --- | --- |
+| whole archive, tail heuristic | 4% | 10 of 11 |
+| scoped to the failing job | 80% | 0 of 11 |
+| escape codes stripped | **91%** | 0 of 11 |
+
+Seven of the eleven are now fully preserved. This is the number the stratified
+analysis rests on, and it is a result in its own right: it says what share of the
+verified evidence the pipeline actually delivers to the model.
+
+## Six vite annotations pointed at the wrong matrix entry (resolved)
 
 `failing_job_section` compared section names literally, but GitHub sanitises the
 filename: the job `Build&Test: node-24, ubuntu-latest` is stored as
@@ -1055,9 +1103,12 @@ annotations were recorded against the first failing matrix entry rather than the
 one `failing_job` records. Their line numbers are in the archive's frame and the
 readings are coherent; they simply describe a different job of the same run.
 
-The matcher now normalises to letters and digits before comparing. The five
-scrapy annotations are verified correct, including `36330213779`, which was
-redone after the earlier frame error. **The six vite annotations need redoing.**
+The matcher now normalises to letters and digits before comparing. **The six
+were redone on 20 October 2026 and all eleven development annotations are now
+verified to fall inside the failing job's section** -- the six vite ones were
+removed from `ground_truth.json` (backed up first) so the annotator would offer
+them again with the banner showing. All six came back at 100% preprocessing
+recall.
 
 This also leaves a methodological point to settle: when several matrix entries
 of one run fail, the recorded `failing_job` is whichever the API reported first.
@@ -1068,20 +1119,170 @@ comparable. That rule belongs in the codebook.
 **All eleven development cases were annotated `test_failure`.** The category skew
 predicted from the repository gate has arrived in full.
 
+## The first paired development run, 20-21 October 2026
+
+`experiments/development_20261020_221319`, eleven development cases, both
+conditions, no parse failures or inference errors. These results refine the
+system; they are not findings.
+
+**Category accuracy was 11/11 for both models, which cannot separate them.**
+Every case in the cohort is annotated `test_failure`, so the measure has no
+variance to work with and both conditions sit at the ceiling.
+
+*Qualified 21 October 2026:* this was first written as "it means nothing", on
+the assumption that any classifier would reach 11/11. The rule-based baseline
+scores **2 of 11**, so category accuracy does separate the models from fixed
+rules -- decisively. It is saturated between the two models, not uninformative
+in general. See the baseline section below.
+
+**Evidence lines do discriminate, and the two models are far apart:**
+
+| | precision | recall | F1 |
+| --- | --- | --- | --- |
+| `openai/gpt-5.6-terra` | 0.89 | 0.56 | **0.67** |
+| `local/thesis-qwen3.5:9b-24k` | 0.78 | 0.23 | **0.34** |
+
+Both models are precise and incomplete -- what they cite is usually genuine
+evidence, but they mark a fraction of the annotated span. The hosted model finds
+0.56 of it, the local model 0.23. The local model's deficit is almost entirely
+recall; its precision holds at 0.78.
+
+**The pipeline reported the two as identical.** `statistical_tests.json` for
+this run says `"Models performed identically on all samples"`, `p = 1.0`, because
+McNemar is computed on category accuracy and there are no discordant pairs to
+find. On the same eleven cases a Wilcoxon signed-rank over paired evidence-line
+F1 gives **p = 0.00098, the hosted model ahead in 11 of 11 cases, mean
+difference +0.31 F1**. The category test was not wrong; it was answering a
+question this data cannot distinguish. As the tool stood, **SRQ1 was
+unanswerable from what it reported** even though the data answers it clearly.
+
+`StatisticalTests.paired_evidence_line_test` now runs alongside McNemar and is
+surfaced in the HTML comparison. It reuses `evidence_line_scores` rather than
+reimplementing F1, and excludes cases with no annotated lines as unscorable
+rather than scoring them zero -- a missing annotation must never read as a model
+failure. Both tests are reported together: each answers part of SRQ1, and
+McNemar will have something to say on a cohort with category variance.
+
+The stored `statistical_tests.json` for this run predates the change and does
+not carry the new field. Reporting is read-only over stored results by design,
+so it is not backfilled; the next run writes it.
+
+**Three things this run establishes.**
+
+1. The pipeline works end to end on this cohort: 22 diagnoses, no failures, no
+   unparsed responses, no prompt exceeding the token budget.
+2. Evidence-line F1 should be the primary measure for this study, not category
+   accuracy. The reformulated primary question already names the evidence lines;
+   this is the evidence for that wording.
+3. Part of the 0.56 recall is definitional rather than error. The annotation
+   marks whole assertion blocks including the expected/actual diff; the models
+   mark the failure line and stop. Nothing says where a failure's evidence ends,
+   and that rule is one of the 34 missing codebook definitions. It is now the
+   one with the clearest evidence behind it.
+
+**Still outstanding and now more visible:** the rule-based baseline would also
+score 11/11 on category here, which is the sharpest possible demonstration of
+why the floor matters. It is still not wired into a run.
+
+## The codebook is drafted
+
+21 October 2026. `docs/thesis/CODEBOOK.md`, no `TO WRITE` markers left, not
+frozen. Revisable until pilot annotation begins; after that §11 records every
+change and the affected cases are re-checked.
+
+**§0 defines an evidence line**, which was the gap that mattered. The first
+paired development run showed evidence-line recall measuring the annotator's
+marking style as much as the models: 37 lines marked against the model's 12 on
+one case, including five blank lines. The author chose the narrow reading --
+lines that *state* the failure, not every line the tool prints while reporting
+it.
+
+**A prediction of mine was wrong and the record should say so.** I expected the
+narrow rule to raise the models' recall, on the theory that most of what they
+"missed" was not evidence. After trimming the 34 blank lines, worker banners and
+fixture reprs, hosted F1 went 0.67 to 0.66 and local stayed at 0.34. The models
+genuinely miss about half the evidence; they had also been citing some of the
+blank lines themselves. The finding is better for being measured under a stated
+rule, and it is unchanged in substance: 11 of 11 to the hosted model,
+p = 0.0010, mean difference +0.33 F1.
+
+**§0.2 fixes the evidence to the job in `failing_job`.** Triage scopes on it,
+the filter narrows to its section, and the annotation is compared against what
+the model cites from that section. Annotating a different matrix entry makes the
+two sides describe different jobs, which is what went wrong with the six vite
+cases.
+
+**§§1-8 are defined and §10's five tie-breaks are resolved.** Six of the eight
+categories have no development example, and the definitions say so rather than
+pretending to be grounded. The tie-breaks settle: label by what was being
+attempted rather than the mechanism that failed; `syntax_error` requires a
+reported parse position; an HTTP status means the endpoint answered, so 401 and
+403 are `permission_denied` rather than network failures; and a check script
+that runs no test suite is out of scope rather than a `test_failure`.
+
+AI assistance is disclosed in the document header, naming what was drafted and
+what the author decided.
+
+## The baseline runs as a third condition
+
+21 October 2026. `src/api/baseline.py` existed and nothing called it; the
+primary research question is worded "relative to a deterministic rule-based
+baseline", so the question was unanswerable as the tool stood. It was also one
+of the commitments made to supervisors.
+
+`run_baseline` in `automated_scripts/benchmark_models.py` now runs it on
+identical filtered input, in the same record shape, scored by the same code. It
+runs **first**, before any network call, so a provider failure still leaves a
+complete baseline condition on disk. The ruleset checksum travels with every
+record, so a ruleset edited after results were seen cannot pass unnoticed.
+`--no-baseline` opts out.
+
+**Measured on the eleven development cases:**
+
+| condition | category | evidence-line F1 |
+| --- | --- | --- |
+| baseline, keyword rules | **2/11** | **0.01** |
+| `local/thesis-qwen3.5:9b-24k` | 11/11 | 0.34 |
+| `openai/gpt-5.6-terra` | 11/11 | 0.66 |
+
+**A second prediction of mine was wrong, and this one in the project's favour.**
+I expected the baseline to score 11/11 on category too, which would have shown
+the category metric to be entirely dead. It scores 2 of 11. The metric cannot
+separate the two models from each other -- that part stands -- but it separates
+models from fixed rules decisively. The earlier claim that category accuracy is
+"dead" was too strong: it is saturated *between the models*, not uninformative
+in general.
+
+**Why the baseline fails is the useful part.** It answers `permission_denied`
+six times, because its rules match the bare string `"403"` and the word
+`"forbidden"`, which appear incidentally in test output -- an HTTP status in a
+fixture, a URL containing 403. A keyword matcher cannot distinguish a failure
+from a mention of one. That is precisely the discrimination the thesis claims an
+LLM provides, and it can now be demonstrated rather than asserted.
+
+**A bug avoided while wiring it.** The statistical tests compare the first two
+conditions in `all_results`, and the baseline runs first, so adding it would
+have silently reported *baseline against hosted* as the model comparison. The
+baseline is now explicitly excluded from that pair, and each model additionally
+gets a `versus_baseline` entry carrying both McNemar and the evidence-line test.
+
 ## Open decisions
 
 Six, listed in `docs/thesis/EVALUATION_PLAN.md` §10. The ones that block
 annotation:
 
 - Keep eight failure categories and widen the data, or cut the categories down.
+  The codebook now records that six of the eight have no development example and
+  78 of 81 cases fail at a test step, so this is close to being settled by the
+  data rather than by choice.
 - Score root-cause correctness with a rubric, or narrow the primary research
   question to categories and evidence lines.
 - ~~What happens to gradle.~~ Settled 18 October 2026: replaced by
   vitejs/vite. The next step is a new config and a fresh collection pass.
-- **The research questions.** Revised wording for all three is drafted in the
-  section above and has not been sent to supervisors. `EVALUATION_PLAN.md` §3
-  still carries the original. SRQ2 moving needs their agreement, and the Primary
-  commits to the baseline being wired into a run.
+- **The research questions.** The revised wording is now in
+  `EVALUATION_PLAN.md` §3 with the originals shown beside it in §3.2. **The plan
+  has still not been sent.** SRQ2 changed meaning and needs supervisor
+  agreement; the Primary's reference to a baseline is now satisfied.
 - **Whether to re-triage `thesis_gradle_scrapy_2026`.** The two rules it would
   apply now exist -- `is_umbrella_job` in `src/evaluation/job_scope.py`, and
   `BOT_MARKERS` entries for the five maintenance workflows that slipped through.
@@ -1090,8 +1291,9 @@ annotation:
   because replacing gradle means collecting a new one; the rules matter for the
   next collection, not this one.
 
-Two commitments made to supervisors that are not implemented: a **rule-based
-baseline**, and **root-cause / suggested-fix quality scoring**. A third,
+One commitment made to supervisors that is not implemented: **root-cause /
+suggested-fix quality scoring**. The **rule-based baseline** was wired in on
+21 October 2026 and runs as a third condition. A third,
 **independent second review**, has been declined -- see the single-annotator
 section above for the substitute plan, which has to be disclosed to supervisors
 rather than left as a silent omission.
@@ -1100,6 +1302,7 @@ rather than left as a silent omission.
 
 | Path | What |
 | --- | --- |
+| `docs/thesis/PROGRESS_REPORT_2026-10-21.md` | Standalone progress report: state, findings, RQ changes, what remains |
 | `docs/thesis/ACTION_ITEMS.md` | What to do next, in order |
 | `docs/thesis/CODEBOOK.md` | Category rules. Skeleton; definitions not written |
 | `docs/thesis/SUPERVISOR_CONDITIONS.md` | Supervisor conditions and the response to each |

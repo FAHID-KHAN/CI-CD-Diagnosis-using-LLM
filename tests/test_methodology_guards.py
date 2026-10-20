@@ -18,7 +18,7 @@ from src.evaluation.ground_truth_audit import audit_annotations, audit_ground_tr
 from src.evaluation.job_scope import is_bot_run, is_excluded, is_in_scope, is_umbrella_job
 from src.data_collection.data_collection import GitHubActionsCollector, created_window
 from automated_scripts.triage import compute_error_signature
-from src.api.filtering import LogFilter
+from src.api.filtering import LogFilter, _count_tokens
 
 # ── D4: development and pilot cases must not reach the held-out set ────────
 
@@ -1572,3 +1572,96 @@ def test_an_unlocatable_job_falls_back_to_the_whole_log():
         archive, max_lines=50, window_size=2, failing_job="a job that is not in this run"
     )
     assert missing == whole
+
+
+def test_escape_codes_are_stripped_without_moving_line_numbers():
+    """Colour codes cost budget and tell the model nothing, but the frame must hold."""
+    raw = "\n".join(
+        ["plain setup"] * 5
+        + ["\x1b[41m\x1b[1m FAIL \x1b[22m\x1b[49m playground/a.spec.ts > it works"]
+        + ["more setup"] * 5
+    )
+    filtered = LogFilter.apply_smart_filtering(raw, max_lines=50, window_size=2)
+    assert "\x1b[" not in filtered
+    assert "FAIL" in filtered
+    assert "[Line 6]" in filtered, "the failing line must keep its original number"
+
+
+def test_the_token_budget_is_enforced_even_for_enormous_lines():
+    """Middle-trimming stops at five head and five tail lines.
+
+    One vite case returned 24,246 tokens against a 12,000 budget because ten of
+    its lines alone exceeded it, which would have overflowed the local model's
+    context mid-run.
+    """
+    huge = " ".join(f"error token{i}" for i in range(4000))
+    raw = "\n".join([huge] * 12)
+    filtered = LogFilter.apply_smart_filtering(raw, max_lines=500, window_size=20, max_tokens=2000)
+    assert _count_tokens(filtered) <= 2000
+
+
+def test_a_log_inside_the_budget_is_left_alone():
+    raw = "\n".join(["setup", "ERROR something failed", "teardown"])
+    filtered = LogFilter.apply_smart_filtering(raw, max_lines=50, window_size=1, max_tokens=12000)
+    assert "... [truncated] ..." not in filtered
+    assert "ERROR something failed" in filtered
+
+
+# ── SRQ1 must be testable on a cohort that carries one category ───────────
+
+
+def _prediction(log_id: str, predicted_lines: list, actual_lines: list):
+    from src.evaluation.evaluation import PredictionResult
+
+    return PredictionResult(
+        log_id=log_id,
+        predicted_error_type="test_failure",
+        actual_error_type="test_failure",
+        predicted_lines=predicted_lines,
+        actual_lines=actual_lines,
+        confidence=0.9,
+        hallucination_detected=False,
+        execution_time_ms=1000.0,
+    )
+
+
+def test_a_one_category_cohort_still_yields_a_testable_difference():
+    """McNemar is forced to "identical" when every label is the same.
+
+    On the first development run both models scored 11/11 on category and
+    McNemar returned p = 1.0, while the hosted model was ahead on evidence lines
+    in all eleven cases. The category test was answering a question the data
+    could not distinguish.
+    """
+    from src.evaluation.evaluation import StatisticalTests
+
+    truth = [[10, 11, 12, 13] for _ in range(8)]
+    better = [_prediction(f"c{i}", [10, 11, 12], truth[i]) for i in range(8)]
+    worse = [_prediction(f"c{i}", [10], truth[i]) for i in range(8)]
+
+    mcnemar = StatisticalTests.mcnemar_test(better, worse)
+    assert mcnemar["n01"] == 0 and mcnemar["n10"] == 0, "category accuracy cannot discriminate here"
+
+    evidence = StatisticalTests.paired_evidence_line_test(better, worse)
+    assert evidence["a_better"] == 8 and evidence["b_better"] == 0
+    assert evidence["significant_at_005"] is True
+    assert evidence["mean_f1_difference"] > 0
+
+
+def test_cases_without_annotated_lines_are_excluded_not_scored_zero():
+    """Missing annotation must never be counted as a model failure."""
+    from src.evaluation.evaluation import StatisticalTests
+
+    a = [_prediction("c1", [1, 2], [1, 2]), _prediction("c2", [5], [])]
+    b = [_prediction("c1", [1], [1, 2]), _prediction("c2", [9], [])]
+    assert StatisticalTests.paired_evidence_line_test(a, b)["scorable_pairs"] == 1
+
+
+def test_identical_evidence_lines_are_reported_as_such():
+    from src.evaluation.evaluation import StatisticalTests
+
+    a = [_prediction(f"c{i}", [1, 2], [1, 2]) for i in range(5)]
+    b = [_prediction(f"c{i}", [1, 2], [1, 2]) for i in range(5)]
+    result = StatisticalTests.paired_evidence_line_test(a, b)
+    assert result["ties"] == 5
+    assert "Identical" in result["verdict"]

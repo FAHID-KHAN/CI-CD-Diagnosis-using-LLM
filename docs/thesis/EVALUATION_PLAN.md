@@ -41,27 +41,124 @@ No final evaluation data will be collected until this plan is approved.
 
 ## 3. Research questions
 
-**Primary.** How effectively can an LLM-based diagnostic system identify failure
-causes in CI/CD pipeline logs?
+**Primary.** How accurately can an LLM-based system identify the category of a
+CI/CD pipeline failure and the log lines evidencing it, relative to a
+deterministic rule-based baseline?
 
-**SRQ1.** How does the diagnostic performance of an LLM-based system differ when
-using a proprietary LLM versus an open-weights model?
+**SRQ1.** Under identical preprocessed input, how does the diagnostic
+performance of a proprietary LLM differ from that of a locally hosted
+open-weights model, and at what difference in cost and latency?
 
-**SRQ2.** Which categories of CI/CD failures is the LLM-based diagnostic system
-most and least effective at diagnosing?
+**SRQ2.** Which properties of a CI/CD failure log and its pipeline configuration
+determine whether the system can diagnose the failure?
 
-One qualification, which is decision (e) in Section 10. The primary question asks
-about failure *causes*. The system currently scores the failure *category* and the
-log lines the model cites as evidence; it does not score the free-text root cause
-against the annotated one. Scoring root-cause correctness properly requires a
-written rubric applied by both reviewers, which roughly doubles the annotation
-effort per case.
+### 3.1 Repository retention and replacement
 
-My proposal is to treat category accuracy and evidence-line accuracy as the
-measured components of cause identification, to report root-cause and
-suggested-fix text qualitatively rather than as an accuracy claim, and to word the
-primary question to match. I would rather narrow the claim than make one the
-evidence cannot support.
+Required by condition R2: the report must explain why Gradle was retained or
+replaced. Two repositories have been replaced since the plan was first drafted.
+Both decisions were made on log tractability, pipeline stage and evidence
+availability. Neither looked at model output, and selecting by predicted failure
+category would be circular, so it was not done.
+
+**`django/django` was replaced by `scrapy/scrapy`, 18 October 2026.** Fifteen of
+its eighteen eligible cases came from one job, `Run Quality Checks on a PR`.
+Reading the annotated evidence showed these to be a script validating
+pull-request metadata — a malformed ticket reference, an AI disclosure reading
+only "Claude", a ticket not yet accepted. No build ran and no test executed.
+They are administrative checks of the same class as `check-commit-suffix`, which
+triage already excludes, and were admitted only because the job name contains
+the word "check". Excluding them leaves django with roughly three cases.
+
+**`gradle/gradle` was replaced by `vitejs/vite`, 18 October 2026.** Twenty-five
+of its thirty-six eligible cases were umbrella jobs — `Sanity Check on Linux`
+and a sixteen-module `(Unit Test)` aggregate — which report many independent
+failures under one job name and so have no single root cause to annotate. All
+twenty-five exceeded 40,000 log lines and lost every verified evidence line in
+filtering; all eleven single-purpose gradle jobs were under that size and lost
+none. Excluding umbrella jobs leaves roughly six diagnosable gradle cases, which
+is an anecdote rather than a repository arm. Triage now applies that exclusion
+directly.
+
+**The replacement is not JVM, and that is a finding rather than a concession.**
+Five JVM candidates were measured and none is tractable: `netty/netty` at
+1,324,878 lines on its one genuine `Build PR` sample, `apache/dubbo` at 3.5M,
+`micronaut-core` at 53,574, `mockito/mockito` at 26,650 with most logs already
+expired. Large JVM projects build and test every module in one job, which is the
+same structure that made gradle unusable. The ecosystem contrast is therefore
+Python against JavaScript, and the measurement across five projects bounds where
+the artifact applies.
+
+**The current pair is `scrapy/scrapy` and `vitejs/vite`**, which cleared the
+inclusion gate on logs available, pipeline stage and distinct failure families.
+Two of four reference thresholds were not met for vite, and both readings are
+artifacts rather than properties of the repository: repair linkage is a function
+of the sampling window, and the single-workflow figure is contradicted by thirty
+distinct error signatures in thirty inspected runs. The full record is in
+`docs/thesis/measurements/`.
+
+### 3.2 The questions above are revised, and the revision needs your agreement
+
+The original wording is kept below so the change is visible. Two of the three
+were reworded and one changed meaning, so I am asking rather than telling.
+
+> **Primary (original).** How effectively can an LLM-based diagnostic system
+> identify failure causes in CI/CD pipeline logs?
+>
+> **SRQ1 (original).** How does the diagnostic performance of an LLM-based
+> system differ when using a proprietary LLM versus an open-weights model?
+>
+> **SRQ2 (original).** Which categories of CI/CD failures is the LLM-based
+> diagnostic system most and least effective at diagnosing?
+
+**Primary — reworded to match what is measured, and given a reference point.**
+The original asked about failure *causes*; the system scores the *category* and
+the log lines cited as evidence, not the free-text root cause against the
+annotated one. This is decision (e) in Section 10, and I would rather narrow the
+claim than make one the evidence cannot support. Root-cause and suggested-fix
+text would be reported qualitatively.
+
+The phrase "how effectively" also had no referent, so an accuracy figure
+answered nothing. A deterministic keyword-and-pattern baseline now runs as a
+third condition on identical input, scored by the same code, with its ruleset
+checksummed into the freeze record. On the eleven development cases it reaches
+2 of 11 on category and 0.01 evidence-line F1, against 11 of 11 and 0.66 for the
+hosted model — so the comparison discriminates, and the primary question has an
+anchor.
+
+**SRQ1 — scoped to the shared configuration, and widened to cost.** The local
+model's 24,576-token context sets the preprocessing budget for *both*
+conditions; at the largest observed prompt there were 485 tokens of headroom.
+The study therefore compares two models under one deployable configuration, not
+each model at its best, and the original wording would have overclaimed past
+that. Cost and latency are named because they were measured and because
+"differ" is not only about accuracy.
+
+**SRQ2 — this one changed meaning, and is the request I most want checked.**
+The original asks which failure *categories* are diagnosed best and worst. The
+cohort cannot answer it: **78 of 81 eligible cases fail in a test-execution
+step**, all eleven annotated development cases are `test_failure`, and six of
+the eight categories have no development example at all. A per-category F1 over
+one case is not a finding.
+
+The revised question asks instead which *properties of a log* determine whether
+the system can diagnose it, measured on four factors the study already captures:
+log length against preprocessing recall; the pipeline's job structure, where
+umbrella jobs aggregating many independent checks behave differently from
+single-purpose ones; which filtering stage discards the evidence; and failure
+category, reported for the categories the cohort contains. Category therefore
+survives as one factor among four rather than as the whole question.
+
+**On the timing, which I think is the part that matters for validity.** The
+category distribution is known from triage and the repository inclusion gate,
+and **neither involves any model output**. The revision is made before the
+held-out run, on evidence about what the cohort contains. Reformulating after
+seeing held-out results would not be defensible and I am not asking for that.
+If you would rather the questions did not move, the alternative is to keep SRQ2
+as written and answer it only for the categories present, reporting the rest as
+not evaluable — a narrower contribution, honestly stated.
+
+AI assistance was used in drafting this wording. The decisions about what to ask
+are mine.
 
 ## 4. Case selection
 
@@ -235,9 +332,9 @@ constraint on cohort size, and decision (f) asks you to set a target.
 | | Decision | My proposal |
 | --- | --- | --- |
 | (a) | Case selection by pipeline stage and documented repair | Adopt both criteria |
-| (b) | The repository pair | `django/django` plus one contrasting project, confirmed after the traceability check |
-| (c) | Ground-truth standard, and who acts as second reviewer | Documented repair where available, otherwise blind annotation with independent verification and adjudication |
-| (d) | Failure taxonomy | Fix it from the development partition; remove categories the cohort cannot contain |
+| (b) | The repository pair | `scrapy/scrapy` and `vitejs/vite`. django and gradle were both replaced — see §3.1 for the reasons and the measurements |
+| (c) | Ground-truth standard, and who acts as second reviewer | **Changed:** there will be no second reviewer. Documented repair where available — 85% of scrapy and 50% of vite cases in the chosen sampling window — plus blind annotation, a written codebook, and intra-rater re-annotation. Inter-rater agreement will not be claimed |
+| (d) | Failure taxonomy | Six of eight categories have no development example and 78 of 81 cases fail at a test step. Either reduce the taxonomy to what the cohort contains, or accept SRQ2 as reworded in §3.2 |
 | (e) | Whether root-cause correctness is scored | Report qualitatively; measure category and evidence-line accuracy instead; word the primary question to match |
 | (f) | Target cohort size | Set against the annotation and inference costs in Section 9 |
 

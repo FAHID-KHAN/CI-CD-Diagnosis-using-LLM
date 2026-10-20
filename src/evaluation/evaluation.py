@@ -69,6 +69,88 @@ class StatisticalTests:
         }
 
     @staticmethod
+    def paired_evidence_line_test(
+        predictions_a: List[PredictionResult],
+        predictions_b: List[PredictionResult],
+    ) -> Dict[str, object]:
+        """Wilcoxon signed-rank over per-case evidence-line F1.
+
+        McNemar is computed on category accuracy, which cannot discriminate when
+        the cohort carries one category: with every label the same, both models
+        score 100%, there are no discordant pairs, and the verdict is forced to
+        "performed identically". That happened on the first development run --
+        eleven cases all labelled ``test_failure`` -- while the same eleven cases
+        showed the hosted model ahead on evidence lines in all eleven, at
+        p = 0.001. The category test was not wrong, it was answering a question
+        the data could not distinguish.
+
+        Evidence-line F1 varies case by case whatever the category distribution,
+        so it is what SRQ1 can actually be tested on. Scores here come from
+        ``evidence_line_scores`` rather than a second implementation, and cases
+        with no annotated lines are unscorable and excluded rather than counted
+        as zero.
+        """
+        from src.evaluation.category_metrics import evidence_line_scores
+
+        by_id_b = {p.log_id: p for p in predictions_b}
+        paired = []
+        for item in predictions_a:
+            other = by_id_b.get(item.log_id)
+            if other is None:
+                continue
+            first = evidence_line_scores(predicted=item.predicted_lines, actual=item.actual_lines)
+            second = evidence_line_scores(predicted=other.predicted_lines, actual=other.actual_lines)
+            if not (first["scorable"] and second["scorable"]):
+                continue
+            paired.append((float(first["f1"]), float(second["f1"])))
+
+        if len(paired) < 2:
+            return {
+                "scorable_pairs": len(paired),
+                "verdict": "Too few scorable pairs for a paired test",
+            }
+
+        first_scores = [a for a, _ in paired]
+        second_scores = [b for _, b in paired]
+        a_wins = sum(1 for a, b in paired if a > b)
+        b_wins = sum(1 for a, b in paired if b > a)
+        ties = sum(1 for a, b in paired if a == b)
+        mean_difference = float(np.mean(first_scores) - np.mean(second_scores))
+
+        if a_wins + b_wins == 0:
+            return {
+                "scorable_pairs": len(paired),
+                "a_better": 0,
+                "b_better": 0,
+                "ties": ties,
+                "mean_f1_a": float(np.mean(first_scores)),
+                "mean_f1_b": float(np.mean(second_scores)),
+                "mean_f1_difference": 0.0,
+                "verdict": "Identical evidence-line F1 on every case",
+            }
+
+        result = stats.wilcoxon(first_scores, second_scores)
+        p_value = float(result.pvalue)
+        return {
+            "scorable_pairs": len(paired),
+            "a_better": a_wins,
+            "b_better": b_wins,
+            "ties": ties,
+            "mean_f1_a": float(np.mean(first_scores)),
+            "mean_f1_b": float(np.mean(second_scores)),
+            "mean_f1_difference": mean_difference,
+            "statistic": float(result.statistic),
+            "p_value": p_value,
+            "significant_at_005": bool(p_value < 0.05),
+            "verdict": (
+                f"{'First' if mean_difference > 0 else 'Second'} model better on evidence lines "
+                f"in {max(a_wins, b_wins)} of {len(paired)} cases"
+                if p_value < 0.05
+                else "No significant difference in evidence-line F1"
+            ),
+        }
+
+    @staticmethod
     def bootstrap_confidence_interval(
         predictions: List[PredictionResult],
         metric_fn=None,

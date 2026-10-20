@@ -33,6 +33,11 @@ from src.api.llm_service import (
 )
 from src.api.grounding import GroundingVerifier
 from src.api.models import LLMProvider, LogLine
+from src.api.baseline import BaselineClassifier
+
+# Named like a model so it flows through scoring, reporting and the
+# statistical tests as an ordinary third condition.
+BASELINE_LABEL = "baseline/rules"
 from src.api.filtering import LogFilter
 from src.evaluation.evaluation import (
     PredictionResult,
@@ -74,6 +79,11 @@ def parse_args():
         "--partition",
         choices=("development", "pilot", "held_out"),
         help="Run only this partition of the split. Development is the set the plan permits tuning on.",
+    )
+    parser.add_argument(
+        "--no-baseline",
+        action="store_true",
+        help="Skip the deterministic baseline condition (it is otherwise always run)",
     )
     parser.add_argument("--ground-truth", required=True, help="Blind ground-truth JSON")
     parser.add_argument("--output-dir", required=True, help="Dedicated pilot or final output directory")
@@ -387,6 +397,75 @@ def print_comparison_table(all_metrics):
     print()
 
 
+def run_baseline(logs, max_tokens, checkpoint_file):
+    """Classify every log with the deterministic ruleset, as a third condition.
+
+    Without a floor an accuracy figure has nothing to be measured against, and
+    the primary research question is worded "relative to a deterministic
+    rule-based baseline", so this condition is what makes it answerable. It is
+    also the sharpest way to show when a metric has stopped discriminating: on a
+    cohort where every case is a test failure, matching the word "FAILED" scores
+    as well as either model, and that is a result about the measure rather than
+    about the models.
+
+    It receives the identical filtered log, returns the same record shape, and
+    is scored by the same code. No network call and no model is involved, so it
+    is fast, free and exactly reproducible -- the ruleset checksum travels with
+    every record so a ruleset edited after results were seen cannot pass
+    unnoticed.
+    """
+    classifier = BaselineClassifier()
+    results = []
+    print("-" * 70)
+    print(f"  Baseline: deterministic ruleset {classifier.ruleset_sha256[:12]}")
+    print("-" * 70)
+
+    for i, log_entry in enumerate(logs, 1):
+        filtered = LogFilter.apply_smart_filtering(
+            log_entry["log_content"],
+            max_lines=500,
+            window_size=20,
+            max_tokens=max_tokens,
+            failing_job=log_entry.get("failing_job"),
+        )
+        started = time.perf_counter()
+        verdict = classifier.classify(filtered)
+        elapsed_ms = (time.perf_counter() - started) * 1000
+
+        results.append(
+            {
+                "status": "success",
+                "log_id": log_entry["log_id"],
+                "repository": log_entry.get("repository", ""),
+                "workflow": log_entry.get("workflow_name", ""),
+                "model": BASELINE_LABEL,
+                "error_type": verdict["error_type"],
+                # The baseline states no cause and proposes no fix. Leaving these
+                # empty is the honest record: it classifies and cites lines, and
+                # any rubric scoring must see that it offered no explanation.
+                "root_cause": "",
+                "suggested_fix": "",
+                "confidence_score": 0.0,
+                "failure_lines": verdict["failure_lines"],
+                "grounded_evidence": [],
+                "reasoning": "",
+                "execution_time_ms": elapsed_ms,
+                "grounding_score": None,
+                "hallucination_detected": False,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "cost_usd": 0.0,
+                "matched_patterns": verdict["matched_patterns"],
+                "ruleset_sha256": verdict["ruleset_sha256"],
+            }
+        )
+        print(f"  [{i}/{len(logs)}] {verdict['error_type']} ({len(verdict['failure_lines'])} lines)")
+
+    save_checkpoint(checkpoint_file, results)
+    return results
+
+
 async def main():
     args = parse_args()
 
@@ -533,6 +612,15 @@ async def main():
     all_results = {}
     all_metrics = {}
 
+    # The floor runs first: it needs no network, so a provider problem later
+    # still leaves a complete baseline condition on disk.
+    if not args.no_baseline:
+        baseline_file = os.path.join(out_dir, "results_baseline_rules.json")
+        baseline_results = run_baseline(logs, MAX_FILTER_TOKENS, baseline_file)
+        all_results[BASELINE_LABEL] = baseline_results
+        all_metrics[BASELINE_LABEL] = compute_model_metrics(baseline_results, scoped_ground_truth)
+        print()
+
     for model_spec in models:
         provider, model_name = parse_model_spec(model_spec)
         label = f"{provider.value}/{model_name}"
@@ -593,7 +681,11 @@ async def main():
     print_comparison_table(all_metrics)
 
     # ── Statistical tests (when 2+ models and ground truth) ───────────
-    model_labels = list(all_results.keys())
+    # SRQ1 compares the two model conditions. The baseline is a floor, not a
+    # condition in that contrast, and it is first in all_results -- taking the
+    # first two keys blindly would silently compare the baseline against a model
+    # and report it as the model comparison.
+    model_labels = [label for label in all_results if label != BASELINE_LABEL]
     if scoped_ground_truth and len(model_labels) >= 2:
         gt_map = {a["log_id"]: a for a in scoped_ground_truth}
 
@@ -637,14 +729,46 @@ async def main():
             ci_a = StatisticalTests.bootstrap_confidence_interval(aligned_a)
             ci_b = StatisticalTests.bootstrap_confidence_interval(aligned_b)
             perm = StatisticalTests.paired_permutation_test(aligned_a, aligned_b)
+            # Category accuracy saturates when the cohort carries one category,
+            # which forces McNemar to "performed identically" regardless of how
+            # the models actually differ. Evidence-line F1 varies per case, so it
+            # is reported alongside rather than instead -- both answer part of SRQ1.
+            evidence = StatisticalTests.paired_evidence_line_test(aligned_a, aligned_b)
 
             stat_report = {
                 "models_compared": [a_label, b_label],
                 "n_common_logs": len(common),
                 "mcnemar": mcnemar,
+                "evidence_line_test": evidence,
                 "bootstrap_ci": {a_label: ci_a, b_label: ci_b},
                 "permutation_test": perm,
             }
+
+            # Each model against the floor. This is what makes the primary
+            # question -- accuracy "relative to a deterministic rule-based
+            # baseline" -- answerable, and it is where a saturated metric shows
+            # itself: if fixed rules match a model, the measure has stopped
+            # discriminating rather than the model having done well.
+            if BASELINE_LABEL in all_results:
+                baseline_preds = _to_preds(all_results[BASELINE_LABEL])
+                by_id = {p.log_id: p for p in baseline_preds}
+                against_baseline = {}
+                for label in model_labels:
+                    model_preds = [p for p in _to_preds(all_results[label]) if p.log_id in by_id]
+                    aligned_baseline = [by_id[p.log_id] for p in model_preds]
+                    if not model_preds:
+                        continue
+                    against_baseline[label] = {
+                        "mcnemar": StatisticalTests.mcnemar_test(model_preds, aligned_baseline),
+                        "evidence_line_test": StatisticalTests.paired_evidence_line_test(
+                            model_preds, aligned_baseline
+                        ),
+                    }
+                stat_report["versus_baseline"] = against_baseline
+                stat_report["baseline_ruleset_sha256"] = next(
+                    (r.get("ruleset_sha256") for r in all_results[BASELINE_LABEL] if r.get("ruleset_sha256")),
+                    None,
+                )
             report["statistical_tests"] = stat_report
 
             stat_file = os.path.join(out_dir, "statistical_tests.json")

@@ -609,6 +609,7 @@ def _statistics(report: ExperimentReport) -> str:
     mcnemar = stats.get("mcnemar", {})
     permutation = stats.get("permutation_test", {})
     bootstrap = stats.get("bootstrap_ci", {})
+    evidence = stats.get("evidence_line_test", {})
     rows = [
         ("Paired logs", stats.get("n_common_logs"), ""),
         ("McNemar χ²", mcnemar.get("chi2"), f"p = {mcnemar.get('p_value')}"),
@@ -627,6 +628,30 @@ def _statistics(report: ExperimentReport) -> str:
             f"p = {permutation.get('p_value')}" if permutation.get("p_value") is not None else "",
         ),
     ]
+    if evidence:
+        # Reported next to McNemar because a one-category cohort saturates
+        # category accuracy, and this is the measure that still varies.
+        difference = evidence.get("mean_f1_difference")
+        rows.append(
+            (
+                "Evidence-line F1 difference",
+                f"{difference:+.2f}" if isinstance(difference, (int, float)) else None,
+                (
+                    f"p = {evidence['p_value']:.4f}"
+                    if isinstance(evidence.get("p_value"), (int, float))
+                    else evidence.get("verdict", "")
+                ),
+            )
+        )
+        if evidence.get("scorable_pairs"):
+            rows.append(
+                (
+                    "Evidence-line wins",
+                    f"{evidence.get('a_better')} / {evidence.get('b_better')} / {evidence.get('ties')}"
+                    f" of {evidence['scorable_pairs']}",
+                    evidence.get("verdict", ""),
+                )
+            )
     for label, interval in bootstrap.items():
         rows.append(
             (

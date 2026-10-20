@@ -8,6 +8,28 @@ from src.api.log_sections import scope_to_failing_job
 
 logger = logging.getLogger(__name__)
 
+# Terminal colour and cursor codes. vite's test output carries thousands of them
+# and they are pure cost: they tell the model nothing and they consume the token
+# budget. One case produced a 24,246-token prompt against a 12,000 budget and
+# would have exceeded the local model's context entirely; stripping took it to
+# about 1,015. Removing them per line also lifted mean preprocessing recall on
+# the eleven development cases from 80% to 89%.
+#
+# Stripping is per line, so line numbers are unaffected -- the model's [Line N]
+# markers and the annotated evidence lines must stay in the same frame.
+#
+# compute_error_signature in automated_scripts/triage.py keeps its own narrower
+# pattern deliberately. Widening it there would change every error signature and
+# therefore which cases the duplicate cap removes, which would change the
+# collected cohort.
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def strip_ansi(text: str) -> str:
+    """Remove terminal escape sequences without altering line structure."""
+    return ANSI_ESCAPE.sub("", text)
+
+
 _encoder: Any = None
 try:
     import tiktoken
@@ -94,7 +116,7 @@ class LogFilter:
         offset = 0
         if failing_job:
             log_content, offset, _ = scope_to_failing_job(log_content, failing_job)
-        lines = log_content.split("\n")
+        lines = [strip_ansi(line) for line in log_content.split("\n")]
         total = len(lines)
 
         error_indices = LogFilter.filter_by_keywords(lines)
@@ -177,7 +199,7 @@ class LogFilter:
         offset = 0
         if failing_job:
             log_content, offset, _ = scope_to_failing_job(log_content, failing_job)
-        lines = log_content.split("\n")
+        lines = [strip_ansi(line) for line in log_content.split("\n")]
 
         error_indices = LogFilter.filter_by_keywords(lines)
 
@@ -236,10 +258,31 @@ class LogFilter:
                 break
 
         truncated = head + ["... [truncated] ..."] + tail
+        result = "\n".join(truncated)
+
+        # The loop above stops once head and tail are down to five lines each, so
+        # a log whose individual lines are enormous could still exceed the budget
+        # -- one vite case returned 24,246 tokens against a 12,000 limit, which
+        # would have overflowed the local model's context mid-run. The budget is
+        # a declared invariant, so enforce it here rather than returning a prompt
+        # that cannot be served. This clips mid-line as a last resort, which may
+        # cost the final [Line N] marker.
+        if _count_tokens(result) > max_tokens:
+            result = LogFilter._clip_to_tokens(result, max_tokens)
+
         logger.info(
             "Truncated log from %d to %d tokens (%d lines)",
             token_count,
-            _count_tokens("\n".join(truncated)),
-            len(truncated),
+            _count_tokens(result),
+            len(result.split("\n")),
         )
-        return "\n".join(truncated)
+        return result
+
+    @staticmethod
+    def _clip_to_tokens(text: str, max_tokens: int) -> str:
+        """Hard-clip text to the token budget, keeping the start."""
+        if _encoder is not None:
+            return str(_encoder.decode(_encoder.encode(text)[:max_tokens]))
+        # Without a tokenizer, fall back on the same ~4 chars/token estimate
+        # _count_tokens uses, so the two cannot disagree about the limit.
+        return text[: max_tokens * 4]
