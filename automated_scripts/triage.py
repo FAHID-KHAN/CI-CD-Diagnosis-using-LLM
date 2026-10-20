@@ -40,17 +40,40 @@ TOKEN_ERROR_PATTERNS = [
 
 
 def compute_error_signature(log_content: str) -> str:
+    """Hash the reported error so two runs of one fault share a signature.
+
+    Three kinds of run-to-run variation defeated an earlier version of this and
+    let one fault reach the cohort nineteen times, spread across development,
+    pilot and held-out -- exactly the leakage the grouped split exists to
+    prevent. Each is normalised here:
+
+    * **Revisions and digests.** A VCS-installed dependency names the commit it
+      was built from, so ``aiohttp @ git+...@3489636c`` differs every run. The
+      older ``0x``-prefixed rule did not reach a bare hex SHA.
+    * **Elapsed times.** ``evaluation failed :( (177.25 seconds)``.
+    * **Ordering.** A parallel build races its diagnostics out in a different
+      order each run, so the same set of compiler errors hashed differently.
+
+    Selection happens in document order and only the selected window is sorted.
+    Sorting the whole list first would change *which* lines are kept: generic
+    noise such as ``##[error]Process completed with exit code 1.`` sorts to the
+    front and would crowd out the informative lines, which merged six unrelated
+    pypy failures when it was tried.
+    """
     error_lines = []
     for line in log_content.splitlines():
         if any(keyword in line.lower() for keyword in ("error", "failed", "exception", "fatal", "traceback")):
             cleaned = re.sub(r"\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2}[.\d]*Z?", "", line)
             cleaned = re.sub(r"\x1b\[[0-9;]*m", "", cleaned)
-            cleaned = re.sub(r"0x[0-9a-fA-F]+", "0xADDR", cleaned).strip()
+            cleaned = re.sub(r"0x[0-9a-fA-F]+", "0xADDR", cleaned)
+            cleaned = re.sub(r"\b[0-9a-f]{7,40}\b", "<HEX>", cleaned)
+            cleaned = re.sub(r"\d+\.\d+\s*(seconds|s\b)", "<DURATION>", cleaned)
+            cleaned = cleaned.strip()
             if len(cleaned) > 10:
                 error_lines.append(cleaned[:200])
     if not error_lines:
         error_lines = [line.strip()[:200] for line in log_content.splitlines()[-20:] if line.strip()]
-    return hashlib.sha256("\n".join(error_lines[:20]).encode()).hexdigest()[:12]
+    return hashlib.sha256("\n".join(sorted(error_lines[:20])).encode()).hexdigest()[:12]
 
 
 def exclusion_record(log: dict, reason: str, **details) -> dict:

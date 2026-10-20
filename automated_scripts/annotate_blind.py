@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -168,12 +169,52 @@ def write_review_log(root: Path, log: dict) -> Path:
     return path
 
 
+def failing_job_section(log: dict) -> tuple:
+    """Locate the failing job's own output inside the stored archive.
+
+    A GitHub run's log is a ZIP of one file per job, concatenated here under
+    ``=== name ===`` headers, so a 47,000-line archive can hold eighty jobs and
+    the failing one may begin tens of thousands of lines in. Reading that job in
+    GitHub's web UI instead shows it numbered from 1, and line numbers taken
+    from there are wrong by the section's offset: one annotation cited 410-657
+    for evidence that sits at 10,890-11,131.
+
+    That matters because the model is shown ``[Line N]`` numbered from the start
+    of the stored archive, so evidence-line precision and recall are computed in
+    that frame. Printing the offset lets the reviewer jump to the right place
+    and still read the numbers the scoring uses.
+
+    Returns ``(start_line, end_line, name)`` 1-based and inclusive, or
+    ``(None, None, None)`` when the failing job cannot be located.
+    """
+    job = (log.get("failing_job") or "").strip()
+    if not job:
+        return (None, None, None)
+    lines = log.get("log_content", "").split("\n")
+    marks = [(i, m.group(1)) for i, line in enumerate(lines, 1) if (m := re.match(r"^=== (.+) ===$", line))]
+    for position, (start, name) in enumerate(marks):
+        # Section names carry an index prefix and a .txt suffix: "18_tests (...).txt".
+        stem = name[:-4] if name.endswith(".txt") else name
+        if stem.endswith(job):
+            end = marks[position + 1][0] - 1 if position + 1 < len(marks) else len(lines)
+            return (start, end, name)
+    return (None, None, None)
+
+
 def present_case(root: Path, log: dict, index: int, total: int, mode: str) -> None:
     review_path = write_review_log(root, log)
     print("\n" + "=" * 72)
     print(f"Case {index}/{total}: {log['repository']} — {log.get('workflow_name', '')}")
     print(f"Run: {log.get('url', '')}")
     print(f"Numbered log: {review_path}")
+    total_lines = log.get("log_content", "").count("\n") + 1
+    start, end, name = failing_job_section(log)
+    if start and start > 1:
+        print(f"Log is {total_lines:,} lines covering every job in the run.")
+        print(f"The failing job's output is lines {start:,}-{end:,}  ({name})")
+        print("Take line numbers from the numbered log above, NOT from GitHub's per-job view.")
+    elif total_lines > 2000:
+        print(f"Log is {total_lines:,} lines. Take line numbers from the numbered log above.")
     if mode == "verify":
         print("No model output and no previous annotation are shown. Label the case independently.")
     else:

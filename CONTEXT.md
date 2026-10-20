@@ -22,8 +22,8 @@ Supervisors: Jussi Rasku, Md Mahade Hasan. Thesis seminar: 9 November 2026.
 
 | | |
 | --- | --- |
-| Code | Complete. 153 tests, lint and type checks pass. |
-| Study data | `thesis_scrapy_vite_2026` is the study cohort: 131 raw, 99 eligible, split written (11 / 11 / 31 plus 46 reserve), **0 annotated**. Superseded: `thesis_pair_2026` (27 annotations, all void -- django and gradle both dropped) and `thesis_gradle_scrapy_2026` (78 eligible, never annotated). |
+| Code | Complete. 159 tests, lint and type checks pass. |
+| Study data | `thesis_scrapy_vite_2026` is the study cohort: 131 raw, 81 eligible after re-triage, re-split (11 / 11 / 31 plus 28 reserve), **1 of 53 annotated** (two earlier annotations were voided by the duplicate cap). Superseded: `thesis_pair_2026` (27 annotations, all void -- django and gradle both dropped) and `thesis_gradle_scrapy_2026` (78 eligible, never annotated). |
 | Repositories | scrapy/scrapy and vitejs/vite, decided 18 October 2026 |
 | Active config | `configs/thesis_scrapy_vite_2026.yaml` — scrapy/scrapy (100) and vitejs/vite (60). No cohort collected from it yet. |
 | Next | Write the codebook, then annotate the 11 development cases |
@@ -904,6 +904,87 @@ manifest records `reserve_is_outside_the_confirmatory_analysis: true` -- moving 
 case from reserve into held_out after any held-out result has been seen would
 make the held-out set a function of those results, so a later extension requires
 a new split manifest with a stated reason, exactly as a re-split does.
+
+## One fault had entered the cohort nineteen times
+
+Found 18 October 2026, from the first three annotations: two of them described
+the same root cause in different runs.
+
+A VCS-installed `aiohttp` whose wheel build fails because GCC cannot find its C
+sources appeared in **19 of 99 eligible cases**, spread across development (3),
+pilot (2), held_out (9) and reserve (5). Nine of 31 held-out cases were the same
+fault as three development cases -- precisely the leakage the grouped split
+exists to prevent, and it would also have meant 29% of the confirmatory set was
+one fault.
+
+`compute_error_signature` hashed the first 20 matching error lines nearly
+verbatim, and three kinds of run-to-run variation defeated it:
+
+* **Revisions and digests.** `aiohttp @ git+https://...@3489636c` names the
+  commit built, which differs every run. The existing `0x`-prefixed rule did not
+  reach a bare hex SHA.
+* **Elapsed times.** `evaluation failed :( (177.25 seconds)`.
+* **Ordering.** A parallel build races its `cc1: fatal error:` lines out in a
+  different order each run, so one set of compiler errors hashed many ways.
+
+All three are now normalised, and the selected window is sorted before hashing.
+**Selection still happens in document order** -- sorting the whole list first was
+tried and merged six unrelated pypy failures, because generic noise such as
+`##[error]Process completed with exit code 1.` sorts ahead of the informative
+lines and crowded them out. Measured on this cohort: the fault collapses from 19
+signatures to 1, the cohort goes from 99 distinct signatures to 81, and the only
+group formed is the genuine one.
+
+**Re-triaged and re-split**, reason recorded in the split manifest. 99 -> 81
+eligible: 17 excluded as `duplicate_error` under the two-per-repository cap and
+one more as `duplicate_failure_family`. The fault now appears **once**, in
+held_out, with no development or pilot exposure.
+
+**Two of the three annotations are void** -- both annotated cases were capped
+out, and two other instances were retained instead. Making the cap prefer
+already-annotated cases was considered and rejected: triage would then depend on
+annotation progress, so re-running it at different stages would yield different
+cohorts, which is a worse loss than half an hour of reading. The two were the
+same fault in any case, so one of them was duplicate effort regardless.
+
+| bucket | cases | scrapy | vite | over 40k |
+| --- | --- | --- | --- | --- |
+| development | 11 | 5 | 6 | 2 |
+| pilot | 11 | 5 | 6 | 3 |
+| held_out | 31 | 14 | 17 | 5 |
+| reserve | 28 | 12 | 16 | 8 |
+
+**53 cases still to annotate**, one of which is already done.
+
+## Evidence line numbers must be read in the archive's frame
+
+A GitHub run's stored log is a ZIP of one file per job, concatenated under
+`=== name ===` headers, so a 47,019-line archive can hold 80 job sections and
+the failing job's output may begin tens of thousands of lines in. Reading that
+job in GitHub's web UI shows it numbered from 1 instead.
+
+The third annotation hit this. Its reading was correct -- 
+`test_csv_dropped_fields_warning` really did fail with three captured log records
+instead of one, in the `tests (ubuntu, 3.14, no-reactor-extra-deps)` job -- but
+the cited lines 410-657 fall inside a different job's section. That job's output
+starts at line 10,480 and the described evidence sits at roughly 10,890-11,131.
+
+This is measurement-critical. The model is shown `[Line N]` numbered from the
+start of the stored archive, so `evidence_line_scores` and
+`preprocessing_recall` are computed in that frame. Annotated numbers in a job's
+local frame would score near zero even where the model cited exactly the right
+lines. **32 of the 99 pre-re-triage cases were exposed** -- every case whose
+failing job is not the first section.
+
+`failing_job_section` in `automated_scripts/annotate_blind.py` now prints the
+failing job's line range when presenting a case, so the reviewer can jump there
+and still read the numbers the scoring uses. It prints nothing rather than
+guessing when the job cannot be located. The numbered log the tool writes to
+`ground_truth/review_logs/<log_id>.txt` was always in the correct frame; the
+offset just made it impractical to find the failure in it.
+
+`gh_scrapy_scrapy_36330213779` is still eligible and still in development, so
+its `failure_lines` need redoing by hand.
 
 ## Open decisions
 

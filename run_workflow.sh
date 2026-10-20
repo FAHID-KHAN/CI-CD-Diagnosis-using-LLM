@@ -26,12 +26,21 @@ RESUME=false
 OVERWRITE_TRIAGE=false
 FROM_STEP=1
 STUDY_DIR=""
-ANNOTATOR=""
-VERIFIER=""
-SCORER=""
-ACTION=""
-EXPERIMENT=""
+# Accept either form: "annotate ANNOTATOR=id" as an argument, or an exported
+# ANNOTATOR=id in the environment. A bare assignment here would clobber the
+# exported value and reject a reasonable invocation.
+ANNOTATOR="${ANNOTATOR:-}"
+VERIFIER="${VERIFIER:-}"
+SCORER="${SCORER:-}"
+ACTION="${ACTION:-}"
+EXPERIMENT="${EXPERIMENT:-}"
 DRY_RUN=false
+# Partition sizes. Empty means make_split.py's own defaults apply; the runner
+# must be able to express them or a re-split through the wrapper would silently
+# resize the partitions written by a direct call.
+DEVELOPMENT=""
+PILOT=""
+HELD_OUT=""
 OVERWRITE=false
 REASON=""
 COMMAND=""
@@ -66,6 +75,9 @@ Options:
   --resume                Resume an interrupted collection
   --overwrite-triage      Intentionally regenerate derived triage files
   --dry-run               split only: show the allocation without writing it
+  --development N         split only: development cases (default 15)
+  --pilot N               split only: pilot cases (default 15)
+  --held-out N            split only: held-out cases (default 50); the surplus becomes reserve
   --overwrite --reason X  split only: replace an existing split, recording why
   --from STEP             cohort only: 1=setup, 2=collection, 3=triage
   --study-config PATH     Use another versioned study protocol
@@ -97,6 +109,9 @@ while [[ $# -gt 0 ]]; do
         --overwrite) OVERWRITE=true; shift ;;
         --reason) REASON="$2"; shift 2 ;;
         --from) FROM_STEP="$2"; shift 2 ;;
+        --development) DEVELOPMENT="$2"; shift 2 ;;
+        --pilot) PILOT="$2"; shift 2 ;;
+        --held-out) HELD_OUT="$2"; shift 2 ;;
         --study-config) STUDY_CONFIG="$2"; shift 2 ;;
         --study-dir) STUDY_DIR="$2"; shift 2 ;;
         ANNOTATOR=*) ANNOTATOR="${1#ANNOTATOR=}"; shift ;;
@@ -188,6 +203,9 @@ cmd_split() {
     [[ "${DRY_RUN}" == true ]] && args+=(--dry-run)
     [[ "${OVERWRITE}" == true ]] && args+=(--overwrite)
     [[ -n "${REASON}" ]] && args+=(--reason "${REASON}")
+    [[ -n "${DEVELOPMENT}" ]] && args+=(--development "${DEVELOPMENT}")
+    [[ -n "${PILOT}" ]] && args+=(--pilot "${PILOT}")
+    [[ -n "${HELD_OUT}" ]] && args+=(--held-out "${HELD_OUT}")
     "${PYTHON}" automated_scripts/make_split.py "${args[@]}"
 }
 

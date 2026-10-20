@@ -17,6 +17,7 @@ from src.evaluation.category_metrics import (
 from src.evaluation.ground_truth_audit import audit_annotations, audit_ground_truth_file, root_cause_problem
 from src.evaluation.job_scope import is_bot_run, is_excluded, is_in_scope, is_umbrella_job
 from src.data_collection.data_collection import GitHubActionsCollector, created_window
+from automated_scripts.triage import compute_error_signature
 
 # ── D4: development and pilot cases must not reach the held-out set ────────
 
@@ -1393,3 +1394,89 @@ def test_no_family_straddles_the_reserve_and_a_partition():
     cases = [_split_case(f"c{i}", "org/one", f"sig{i // 3}") for i in range(60)]
     allocation = allocate(cases, {"development": 5, "pilot": 5, "held_out": 10}, "signature", seed=13)
     assert check_no_family_spans_partitions(allocation, assign_families(cases, "signature")) == []
+
+
+# ── Signatures: one fault must not enter the cohort many times ────────────
+
+
+def _vcs_build_failure(sha: str, c_files: list, seconds: str) -> str:
+    """Two runs of the same dependency-build fault, differing only in noise."""
+    lines = [
+        f"2026-09-30T04:06:29.8050126Z error: Failed to build `aiohttp @ git+https://host/aiohttp@{sha}`",
+        "2026-09-30T04:06:29.8050127Z   cause: The build backend returned an error",
+        "2026-09-30T04:06:29.8050128Z   cause: Call to `setuptools.build_meta.build_wheel` failed (exit status: 1)",
+        f"2026-09-30T04:06:29.8050129Z evaluation failed :( ({seconds} seconds)",
+    ]
+    lines += [f"2026-09-30T04:06:29.8050130Z cc1: fatal error: {name}: No such file or directory" for name in c_files]
+    return "\n".join(lines)
+
+
+def test_one_fault_gets_one_signature_despite_revision_order_and_timing():
+    """This fault reached a cohort 19 times, across development, pilot and held-out."""
+    first = _vcs_build_failure(
+        "3489636c044df3176665a2173d91ddef6d8161ec",
+        ["aiohttp/_websocket/mask.c", "aiohttp/_http_writer.c", "aiohttp/_find_header.c"],
+        "177.25",
+    )
+    # Same fault: different commit, diagnostics raced out in another order, different elapsed time.
+    second = _vcs_build_failure(
+        "31b6ebee2249d1cdf19da0f3af0c14ee2bf5d6b1",
+        ["aiohttp/_http_writer.c", "aiohttp/_find_header.c", "aiohttp/_websocket/mask.c"],
+        "203.90",
+    )
+    assert compute_error_signature(first) == compute_error_signature(second)
+
+
+def test_different_faults_keep_different_signatures():
+    """Normalisation must not merge unrelated failures."""
+    build = _vcs_build_failure("abc1234def5678", ["aiohttp/mask.c"], "10.0")
+    test = "\n".join(
+        [
+            "2026-09-30T04:06:29Z FAILED tests/test_exporters.py::TestCsvItemExporter::test_dropped_fields",
+            "2026-09-30T04:06:29Z E       AssertionError: assert 3 == 1",
+        ]
+    )
+    assert compute_error_signature(build) != compute_error_signature(test)
+
+
+def test_generic_runner_noise_does_not_swamp_the_informative_lines():
+    """Sorting the whole list before selecting merged six unrelated pypy failures.
+
+    "##[error]Process completed with exit code 1." sorts ahead of real content,
+    so selection has to happen in document order and only the window is sorted.
+    """
+    noise = "\n".join(f"2026-09-30T04:06:2{i}Z ##[error]Process completed with exit code 1." for i in range(9))
+    one = f"2026-09-30T04:06:29Z FAILED tests/test_a.py::test_one - AssertionError\n{noise}"
+    two = f"2026-09-30T04:06:29Z FAILED tests/test_b.py::test_two - TypeError\n{noise}"
+    assert compute_error_signature(one) != compute_error_signature(two)
+
+
+def test_the_failing_jobs_section_is_located_in_the_archive():
+    """Line numbers must be read in the frame the scoring uses, not GitHub's."""
+    from automated_scripts.annotate_blind import failing_job_section
+
+    content = "\n".join(
+        ["=== 0_tests (ubuntu, 3.15, default-reactor).txt ==="]
+        + ["noise"] * 400
+        + ["=== 18_tests (ubuntu, 3.14, no-reactor-extra-deps).txt ==="]
+        + ["the real failure"] * 50
+    )
+    log = {"log_content": content, "failing_job": "tests (ubuntu, 3.14, no-reactor-extra-deps)"}
+    start, end, name = failing_job_section(log)
+    assert start == 402 and end == 452
+    assert name.startswith("18_")
+
+
+def test_a_single_job_archive_reports_no_offset():
+    from automated_scripts.annotate_blind import failing_job_section
+
+    log = {"log_content": "=== 0_tests.txt ===\nboom", "failing_job": "tests"}
+    assert failing_job_section(log)[0] == 1
+
+
+def test_an_unlocatable_failing_job_is_reported_as_unknown():
+    """Better to say nothing than to print an offset for the wrong section."""
+    from automated_scripts.annotate_blind import failing_job_section
+
+    assert failing_job_section({"log_content": "=== 0_other.txt ===\nx", "failing_job": "tests"}) == (None, None, None)
+    assert failing_job_section({"log_content": "x", "failing_job": ""}) == (None, None, None)
