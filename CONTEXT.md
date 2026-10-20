@@ -25,7 +25,9 @@ Supervisors: Jussi Rasku, Md Mahade Hasan. Thesis seminar: 9 November 2026.
 | Code | Complete. 170 tests, lint and type checks pass. |
 | Study data | `thesis_scrapy_vite_2026` is the study cohort: 131 raw, 81 eligible after re-triage, re-split (11 / 11 / 31 plus 28 reserve), **11 of 53 annotated** -- all development, all verified in the correct frame, mean preprocessing recall 91%. One paired development run complete. Superseded: `thesis_pair_2026` (27 annotations, all void -- django and gradle both dropped) and `thesis_gradle_scrapy_2026` (78 eligible, never annotated). |
 | Repositories | scrapy/scrapy and vitejs/vite, decided 18 October 2026 |
-| Active config | `configs/thesis_scrapy_vite_2026.yaml` — scrapy/scrapy (100) and vitejs/vite (60). No cohort collected from it yet. |
+| Active config | `configs/thesis_scrapy_vite_2026.yaml` — scrapy/scrapy (100) and vitejs/vite (60), sampling window 14–45 days. Cohort collected 18 October; do not edit, its SHA-256 is in the manifests. |
+| Evaluation plan | **The author is rewriting it and will send it.** `EVALUATION_PLAN.md` currently holds a drafted §3.1, §3.2 and an amended §10 — treat these as material to rework, not as the version going out. |
+| Progress report | `docs/thesis/PROGRESS_REPORT_2026-10-21.md` — standalone, written 21 October |
 | Next | Read the codebook, then annotate the 11 pilot cases |
 | Blocked on | Supervisor approval of the evaluation method; the held-out run stays gated |
 
@@ -620,12 +622,20 @@ missing, because two of the three have a gap that will not close by itself.
 
 ### Proposed revision, 18 October 2026 -- not yet sent to supervisors
 
-**Applied to `EVALUATION_PLAN.md` §3 on 21 October 2026.** The original wording
-is kept beside it in §3.2 so the change is visible, and §3.2 states plainly that
+**Drafted into `EVALUATION_PLAN.md` §3 on 21 October 2026, and the author is
+now rewriting the plan to send.** What is in the file is material to rework
+rather than the version going to supervisors. The original wording is kept
+beside the revision in §3.2 so the change stays visible, and §3.2 states that
 the revision is a request rather than a decision already taken. §3.1 was written
 at the same time to cover repository retention and replacement, which condition
 R2 requires and which four documents already referenced as §3.1 although it did
 not exist; the revised wording moved to §3.2 rather than taking that number.
+
+Three rows of §10 were also amended and need the author's eye before they go
+out: **(b)** the repository pair, which still named django; **(c)** the
+ground-truth standard, which still promised a second reviewer; and **(d)** the
+taxonomy, which now carries the numbers behind the decision. Row (c) is the one
+to read closely — it reverses a commitment made to supervisors.
 
 > **Primary.** How accurately can an LLM-based system identify the category of a
 > CI/CD pipeline failure and the log lines evidencing it, relative to a
@@ -1279,10 +1289,11 @@ annotation:
   question to categories and evidence lines.
 - ~~What happens to gradle.~~ Settled 18 October 2026: replaced by
   vitejs/vite. The next step is a new config and a fresh collection pass.
-- **The research questions.** The revised wording is now in
-  `EVALUATION_PLAN.md` §3 with the originals shown beside it in §3.2. **The plan
-  has still not been sent.** SRQ2 changed meaning and needs supervisor
-  agreement; the Primary's reference to a baseline is now satisfied.
+- **The research questions.** Revised wording is drafted in
+  `EVALUATION_PLAN.md` §3 with the originals beside it in §3.2. **The author is
+  writing the plan that will actually be sent.** SRQ2 changed meaning and needs
+  supervisor agreement; the Primary's reference to a baseline is satisfied now
+  that the baseline runs as a condition.
 - **Whether to re-triage `thesis_gradle_scrapy_2026`.** The two rules it would
   apply now exist -- `is_umbrella_job` in `src/evaluation/job_scope.py`, and
   `BOT_MARKERS` entries for the five maintenance workflows that slipped through.
