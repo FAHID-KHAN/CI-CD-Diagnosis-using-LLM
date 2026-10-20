@@ -18,6 +18,7 @@ from src.evaluation.ground_truth_audit import audit_annotations, audit_ground_tr
 from src.evaluation.job_scope import is_bot_run, is_excluded, is_in_scope, is_umbrella_job
 from src.data_collection.data_collection import GitHubActionsCollector, created_window
 from automated_scripts.triage import compute_error_signature
+from src.api.filtering import LogFilter
 
 # ── D4: development and pilot cases must not reach the held-out set ────────
 
@@ -1480,3 +1481,94 @@ def test_an_unlocatable_failing_job_is_reported_as_unknown():
 
     assert failing_job_section({"log_content": "=== 0_other.txt ===\nx", "failing_job": "tests"}) == (None, None, None)
     assert failing_job_section({"log_content": "x", "failing_job": ""}) == (None, None, None)
+
+
+def test_the_section_matcher_survives_githubs_filename_sanitising():
+    """A colon in the job name is dropped from the stored section filename.
+
+    Comparing literally found no section for any vite case, so the offset banner
+    stayed silent and six annotations were recorded against the wrong matrix
+    entry of the same run.
+    """
+    from automated_scripts.annotate_blind import failing_job_section
+
+    content = "\n".join(
+        ["=== 0_Build & Test Failed.txt ==="]
+        + ["summary"] * 34
+        + ["=== 2_Build&Test node-24, windows-latest.txt ==="]
+        + ["other matrix entry"] * 100
+        + ["=== 4_Build&Test node-24, ubuntu-latest.txt ==="]
+        + ["the failing entry"] * 50
+    )
+    log = {"log_content": content, "failing_job": "Build&Test: node-24, ubuntu-latest"}
+    start, end, name = failing_job_section(log)
+    assert name.startswith("4_"), name
+    assert start == 137 and end == 187
+
+
+def test_a_matrix_entry_is_not_confused_with_a_similarly_named_one():
+    """node-24 must not match the node-24-with-a-different-os section."""
+    from automated_scripts.annotate_blind import failing_job_section
+
+    content = "\n".join(
+        ["=== 2_Build&Test node-24, macos-latest.txt ==="]
+        + ["wrong os"] * 20
+        + ["=== 3_Build&Test node-24, ubuntu-latest.txt ==="]
+        + ["right one"] * 10
+    )
+    log = {"log_content": content, "failing_job": "Build&Test: node-24, ubuntu-latest"}
+    assert failing_job_section(log)[0] == 22
+
+
+# ── Filtering: the model must be shown the job that failed ────────────────
+
+
+def _run_archive() -> str:
+    """A stored run log: several job sections, runner system files at the end."""
+    return "\n".join(
+        ["=== 0_tests (ubuntu, 3.15, py).txt ==="]
+        + ["an unrelated job failed here: error in something else"] * 300
+        + ["=== 18_tests (ubuntu, 3.14, extra-deps).txt ==="]
+        + ["setup"] * 10
+        + ["FAILED tests/test_target.py::test_it - AssertionError: the real failure"]
+        + ["teardown"] * 10
+        + ["=== tests (ubuntu, 3.14, extra-deps)/system.txt ==="]
+        + ["runner noise: error reading something irrelevant"] * 400
+    )
+
+
+def test_scoping_keeps_the_failing_jobs_evidence():
+    """Unscoped, the line cap keeps the trailing system logs and loses the failure."""
+    archive = _run_archive()
+    # Locate it rather than hardcoding, so the fixture can be edited safely.
+    failed_line = next(i for i, line in enumerate(archive.split("\n"), 1) if line.startswith("FAILED"))
+    evidence = [failed_line]
+
+    unscoped = LogFilter.trace_filtering(archive, evidence, max_lines=50)
+    scoped = LogFilter.trace_filtering(
+        archive, evidence, max_lines=50, failing_job="tests (ubuntu, 3.14, extra-deps)"
+    )
+    assert unscoped["after_line_cap"]["recall"] == 0.0
+    assert scoped["after_line_cap"]["recall"] == 1.0
+
+
+def test_scoped_line_numbers_stay_in_the_stored_logs_frame():
+    """The model's [Line N] and the annotated evidence must be the same frame."""
+    archive = _run_archive()
+    filtered = LogFilter.apply_smart_filtering(
+        archive, max_lines=50, window_size=2, failing_job="tests (ubuntu, 3.14, extra-deps)"
+    )
+    failed_line = next(i for i, line in enumerate(archive.split("\n"), 1) if line.startswith("FAILED"))
+    assert failed_line > 300, "the failure must sit well past the first section"
+    assert f"[Line {failed_line}]" in filtered, "the failing line must keep its archive-wide number"
+    assert "[Line 1]" not in filtered
+
+
+def test_an_unlocatable_job_falls_back_to_the_whole_log():
+    """Scoping to the wrong section would hide the failure entirely."""
+    archive = _run_archive()
+    whole = LogFilter.apply_smart_filtering(archive, max_lines=50, window_size=2)
+    missing = LogFilter.apply_smart_filtering(
+        archive, max_lines=50, window_size=2, failing_job="a job that is not in this run"
+    )
+    assert missing == whole

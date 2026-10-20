@@ -192,10 +192,16 @@ def failing_job_section(log: dict) -> tuple:
         return (None, None, None)
     lines = log.get("log_content", "").split("\n")
     marks = [(i, m.group(1)) for i, line in enumerate(lines, 1) if (m := re.match(r"^=== (.+) ===$", line))]
+    # GitHub sanitises the section filename, so it is not the job name verbatim:
+    # the job "Build&Test: node-24, ubuntu-latest" is stored as
+    # "4_Build&Test node-24, ubuntu-latest.txt" with the colon dropped. Comparing
+    # the names literally found nothing for every vite case, the banner stayed
+    # silent, and six annotations were recorded against the wrong matrix entry.
+    wanted = re.sub(r"[^a-z0-9]", "", job.lower())
     for position, (start, name) in enumerate(marks):
         # Section names carry an index prefix and a .txt suffix: "18_tests (...).txt".
         stem = name[:-4] if name.endswith(".txt") else name
-        if stem.endswith(job):
+        if re.sub(r"[^a-z0-9]", "", stem.lower()).endswith(wanted):
             end = marks[position + 1][0] - 1 if position + 1 < len(marks) else len(lines)
             return (start, end, name)
     return (None, None, None)

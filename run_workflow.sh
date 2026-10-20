@@ -34,6 +34,7 @@ VERIFIER="${VERIFIER:-}"
 SCORER="${SCORER:-}"
 ACTION="${ACTION:-}"
 EXPERIMENT="${EXPERIMENT:-}"
+MODELS="${MODELS:-}"
 DRY_RUN=false
 # Partition sizes. Empty means make_split.py's own defaults apply; the runner
 # must be able to express them or a re-split through the wrapper would silently
@@ -64,6 +65,7 @@ Commands:
   defects           Record or audit controlled defects          (add|audit|commit)
   score             Blind 0/1/2 scoring of model root causes    (needs SCORER=)
   freeze            Create or verify the freeze record          (create|verify)
+  develop           Paired run on the development partition      (MODELS= optional)
   pilot             Paired five-case engineering run on the smoke cohort
   compare           Terminal comparison plus the self-contained HTML page
   engineering       smoke -> pilot -> compare, stopping at any human step
@@ -86,6 +88,7 @@ Options:
   SCORER=id               Scorer identifier for the score command
   ACTION=word             Sub-action for defects (add|audit|commit) and freeze (create|verify)
   EXPERIMENT=dir          Experiment directory for the score command
+  MODELS=a,b              develop only: run a subset of conditions while iterating
   VERIFIER=id             Second-reviewer identifier for verify commands
 
 Examples:
@@ -118,6 +121,7 @@ while [[ $# -gt 0 ]]; do
         SCORER=*) SCORER="${1#SCORER=}"; shift ;;
         ACTION=*) ACTION="${1#ACTION=}"; shift ;;
         EXPERIMENT=*) EXPERIMENT="${1#EXPERIMENT=}"; shift ;;
+        MODELS=*) MODELS="${1#MODELS=}"; shift ;;
         VERIFIER=*) VERIFIER="${1#VERIFIER=}"; shift ;;
         --help|-h) usage; exit 0 ;;
         -*) echo "Unknown option: $1"; usage; exit 1 ;;
@@ -195,6 +199,32 @@ cmd_annotate() {
     local args=(--study-config "${STUDY_CONFIG}" --mode annotate --annotator "${ANNOTATOR}")
     [[ -n "$1" ]] && args+=(--study-dir "$1")
     "${PYTHON}" automated_scripts/annotate_blind.py "${args[@]}"
+}
+
+cmd_development() {
+    # The development partition is the only one the plan permits iterating on,
+    # so this is the run to use while refining the prompt and the codebook.
+    # Held-out stays behind ./run_workflow.sh final and its gates.
+    local dir="${STUDY_DIR}"
+    if [[ -z "${dir}" ]]; then
+        dir="$("${PYTHON}" -c "
+import sys; sys.path.insert(0, '.')
+from automated_scripts.study_utils import load_study_config, study_directory
+config, _ = load_study_config('${STUDY_CONFIG}')
+print(study_directory(config))")"
+    fi
+    local out="${dir}/experiments/development_$(date +%Y%m%d_%H%M%S)"
+    step "Paired development run -> ${out}"
+    local args=(
+        --input "${dir}/triaged/eligible_logs.json"
+        --ground-truth "${dir}/ground_truth/ground_truth.json"
+        --partition development
+        --output-dir "${out}"
+    )
+    # A single condition is allowed here for iteration; benchmark_models.py
+    # refuses --models for the held-out run.
+    [[ -n "${MODELS}" ]] && args+=(--models "${MODELS}")
+    "${PYTHON}" automated_scripts/benchmark_models.py "${args[@]}"
 }
 
 cmd_split() {
@@ -321,6 +351,7 @@ case "${COMMAND}" in
     defects)        cmd_defects ;;
     score)          cmd_score ;;
     freeze)         cmd_freeze ;;
+    develop)        cmd_development ;;
     pilot)          cmd_pilot ;;
     compare)        "${PYTHON}" automated_scripts/compare_reports.py ;;
     engineering)    cmd_engineering ;;

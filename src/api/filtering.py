@@ -2,7 +2,9 @@
 
 import logging
 import re
-from typing import Any, List
+from typing import Any, List, Optional
+
+from src.api.log_sections import scope_to_failing_job
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +78,7 @@ class LogFilter:
         max_lines: int = 500,
         window_size: int = 20,
         max_tokens: int = 12000,
+        failing_job: Optional[str] = None,
     ) -> dict:
         """Report how many verified evidence lines survive each filtering stage.
 
@@ -88,6 +91,9 @@ class LogFilter:
         match the ``[Line N]`` markers and the annotated evidence.
         """
         wanted = {int(n) for n in (evidence_lines or [])}
+        offset = 0
+        if failing_job:
+            log_content, offset, _ = scope_to_failing_job(log_content, failing_job)
         lines = log_content.split("\n")
         total = len(lines)
 
@@ -96,16 +102,16 @@ class LogFilter:
             covered: set[int] = set()
             for start, end, _ in LogFilter.get_context_window(lines, error_indices, window_size=window_size):
                 covered.update(range(start, end))
-            after_window = {index + 1 for index in covered}
+            after_window = {offset + index + 1 for index in covered}
         else:
             # No keyword matched, so the tail is kept instead.
             tail_start = max(0, total - max_lines)
-            after_window = {index + 1 for index in range(tail_start, total)}
+            after_window = {offset + index + 1 for index in range(tail_start, total)}
 
         ordered = sorted(after_window)
         after_cap = set(ordered[-max_lines:])
 
-        rendered = "\n".join(f"[Line {n}] {lines[n - 1]}" for n in sorted(after_cap))
+        rendered = "\n".join(f"[Line {n}] {lines[n - offset - 1]}" for n in sorted(after_cap))
         after_tokens = {
             int(match.group(1))
             for match in re.finditer(r"\[Line (\d+)\]", LogFilter._truncate_to_tokens(rendered, max_tokens))
@@ -150,6 +156,7 @@ class LogFilter:
         max_lines: int = 500,
         window_size: int = 20,
         max_tokens: int = 12000,
+        failing_job: Optional[str] = None,
     ) -> str:
         """Intelligently reduce log size while preserving error context.
 
@@ -158,7 +165,18 @@ class LogFilter:
 
         After line-based filtering, the result is further truncated to
         *max_tokens* so that the LLM prompt stays within context limits.
+
+        When *failing_job* is given, the log is first narrowed to that job's own
+        section. A stored run log concatenates every job in the run and ends
+        with the runner's system files, so without narrowing the line cap keeps
+        the tail of unrelated jobs: on the first eleven annotated development
+        cases that discarded every verified evidence line in ten of them. Line
+        numbers remain those of the full stored log, because the annotated
+        evidence is recorded in that frame and the two are compared directly.
         """
+        offset = 0
+        if failing_job:
+            log_content, offset, _ = scope_to_failing_job(log_content, failing_job)
         lines = log_content.split("\n")
 
         error_indices = LogFilter.filter_by_keywords(lines)
@@ -166,7 +184,7 @@ class LogFilter:
         if not error_indices:
             tail = lines[-max_lines:]
             start_idx = len(lines) - len(tail)
-            result = [f"[Line {start_idx + i + 1}] {line}" for i, line in enumerate(tail)]
+            result = [f"[Line {offset + start_idx + i + 1}] {line}" for i, line in enumerate(tail)]
             return LogFilter._truncate_to_tokens("\n".join(result), max_tokens)
 
         contexts = LogFilter.get_context_window(lines, error_indices, window_size=window_size)
@@ -189,7 +207,7 @@ class LogFilter:
         # the head discarded every verified evidence line in 7 of 16 development
         # cases, because setup noise at the top filled the budget before the
         # failure was reached.
-        result = [f"[Line {number + 1}] {content}" for number, content in filtered_lines[-max_lines:]]
+        result = [f"[Line {offset + number + 1}] {content}" for number, content in filtered_lines[-max_lines:]]
         return LogFilter._truncate_to_tokens("\n".join(result), max_tokens)
 
     @staticmethod

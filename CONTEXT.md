@@ -22,11 +22,11 @@ Supervisors: Jussi Rasku, Md Mahade Hasan. Thesis seminar: 9 November 2026.
 
 | | |
 | --- | --- |
-| Code | Complete. 159 tests, lint and type checks pass. |
-| Study data | `thesis_scrapy_vite_2026` is the study cohort: 131 raw, 81 eligible after re-triage, re-split (11 / 11 / 31 plus 28 reserve), **1 of 53 annotated** (two earlier annotations were voided by the duplicate cap). Superseded: `thesis_pair_2026` (27 annotations, all void -- django and gradle both dropped) and `thesis_gradle_scrapy_2026` (78 eligible, never annotated). |
+| Code | Complete. 164 tests, lint and type checks pass. |
+| Study data | `thesis_scrapy_vite_2026` is the study cohort: 131 raw, 81 eligible after re-triage, re-split (11 / 11 / 31 plus 28 reserve), **11 of 53 annotated** -- all development; the five scrapy ones are verified, the six vite ones need redoing. Superseded: `thesis_pair_2026` (27 annotations, all void -- django and gradle both dropped) and `thesis_gradle_scrapy_2026` (78 eligible, never annotated). |
 | Repositories | scrapy/scrapy and vitejs/vite, decided 18 October 2026 |
 | Active config | `configs/thesis_scrapy_vite_2026.yaml` — scrapy/scrapy (100) and vitejs/vite (60). No cohort collected from it yet. |
-| Next | Write the codebook, then annotate the 11 development cases |
+| Next | Redo the six vite annotations, then `./run_workflow.sh develop` |
 | Blocked on | Supervisor approval of the evaluation method; the held-out run stays gated |
 
 Check the live state at any time:
@@ -359,14 +359,21 @@ preprocessing configuration and ours is sized to the smaller model. This belongs
 in the thesis as a stated scoping decision, not in limitations -- a reader will
 otherwise ask why the hosted model was not given the whole log.
 
-**Section scoping was tried and does not work.** Large gradle logs are
-26-section archives and the evidence does sit in only two or three sections, so
-restricting the filter to them looked promising. It was tested two ways against
-the five large-log cases: scoping to the sections whose name matches
-`failing_job` recovered evidence in 1 of 5 (mean recall 4%), and ranking
-sections by error-keyword density and filling the line budget recovered none.
-The sections are themselves 3,000-11,000 lines of keyword-dense test output, so
-the 500-line cap still crowds the evidence out. Recorded so it is not retried.
+**Section scoping fails on gradle specifically -- see the correction below.**
+Large gradle logs are 26-section archives and the evidence does sit in only two
+or three sections, so restricting the filter to them looked promising. Tested two
+ways against the five large-log cases: scoping to the sections whose name matches
+`failing_job` recovered evidence in 1 of 5 (mean recall 4%), and ranking sections
+by error-keyword density and filling the line budget recovered none. Gradle's
+sections are themselves 3,000-11,000 lines of keyword-dense test output, so the
+500-line cap still crowded the evidence out.
+
+**This was recorded at the time as "section scoping does not work", which was
+wrong as a general claim** -- it held only for gradle's umbrella jobs, which are
+now excluded from the study. On scrapy and vite the failing job's section is
+around 1,200 lines and scoping works very well. See the section on the scoped
+filter below. The claim is left here, corrected, rather than deleted, because the
+measurement was real and the overreach is worth remembering.
 
 **The boundary is an umbrella-job effect, not a repository effect.** Within
 gradle the separation is total:
@@ -985,6 +992,81 @@ offset just made it impractical to find the failure in it.
 
 `gh_scrapy_scrapy_36330213779` is still eligible and still in development, so
 its `failure_lines` need redoing by hand.
+
+## The filter is scoped to the failing job
+
+Changed 20 October 2026, on evidence from the first eleven annotated development
+cases -- which is what the development partition is for.
+
+**What the first measurement showed.** Preprocessing recall over all eleven:
+**ten of eleven lost every verified evidence line**, each at `line_cap`. That
+included vite logs of under 5,000 lines, so size was not the cause. Position
+was.
+
+A stored run log is a ZIP of one file per job, concatenated under `=== name ===`
+headers, and it **ends with the runner's own `*/system.txt` files** -- about
+eighty of them in a scrapy run. Keeping the last 500 keyword-matching lines of
+the archive therefore lands in system logs, while the failing job sits in the
+middle. The tail heuristic that fixed the django and gradle cohort, where logs
+were short and single-section, is actively wrong for a multi-job archive.
+
+**What scoping does.** `scope_to_failing_job` in `src/api/log_sections.py`
+narrows the log to the failing job's own section before filtering. Measured on
+the five scrapy cases whose annotations are verified correct:
+
+| case | archive lines | job section | recall before | after |
+| --- | --- | --- | --- | --- |
+| 37192544648 | 34,978 | 1,174 | 0% | 73% |
+| 37112769007 | 35,752 | 1,172 | 0% | 85% |
+| 36564226178 | 47,712 | 1,277 | 0% | 74% |
+| 36330213779 | 47,019 | 1,056 | 0% | 100% |
+| 35055489720 | 5,250 | 1,177 | 40% | 50% |
+
+The residual loss is token truncation inside the section: the scoped prompts
+still reach about 11,970 tokens against the 12,000 budget.
+
+**Three consequences for the thesis.** The ~40,000-line boundary largely
+dissolves, because what bounds the system is the failing job's size rather than
+the archive's. The local model's 24,576-token context stops being the binding
+constraint on both conditions. And the artifact's input is now the failing job's
+log, not the run's -- which has to be stated as a design decision, and is
+defensible on its own terms, since a diagnostic tool in practice is pointed at
+the job that failed.
+
+**Line numbers stay in the stored log's frame.** The offset is added back, so a
+model citation and an annotated evidence line remain directly comparable --
+`evidence_line_scores` compares exactly those two. An unlocatable job falls back
+to the whole log rather than guessing a section, since scoping to the wrong job
+would hide the failure completely.
+
+One definition lives in `src/api/log_sections.py` because the filter, the recall
+trace and blind annotation all need to agree on it. A private copy in any one of
+them would let the model's view and the annotated numbers drift apart. This is
+the same lesson as `is_bot_run` sitting in `tools/` where triage could not see
+it.
+
+## Six vite annotations point at the wrong matrix entry
+
+`failing_job_section` compared section names literally, but GitHub sanitises the
+filename: the job `Build&Test: node-24, ubuntu-latest` is stored as
+`4_Build&Test node-24, ubuntu-latest.txt`, with the colon dropped. No section
+matched for any vite case, the offset banner stayed silent, and all six vite
+annotations were recorded against the first failing matrix entry rather than the
+one `failing_job` records. Their line numbers are in the archive's frame and the
+readings are coherent; they simply describe a different job of the same run.
+
+The matcher now normalises to letters and digits before comparing. The five
+scrapy annotations are verified correct, including `36330213779`, which was
+redone after the earlier frame error. **The six vite annotations need redoing.**
+
+This also leaves a methodological point to settle: when several matrix entries
+of one run fail, the recorded `failing_job` is whichever the API reported first.
+Triage and the scope rules already key on `failing_job`, and the filter now
+scopes to it, so annotation has to use the same anchor or the two sides are not
+comparable. That rule belongs in the codebook.
+
+**All eleven development cases were annotated `test_failure`.** The category skew
+predicted from the repository gate has arrived in full.
 
 ## Open decisions
 

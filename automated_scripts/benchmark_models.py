@@ -264,12 +264,16 @@ async def benchmark_model(
             print(f"  [{i}/{len(logs)}] {repo} - {workflow} SKIP (checkpoint)")
             continue
 
-        # Filter the log content
+        # Filter the log content, scoped to the job that failed. A stored run log
+        # concatenates every job in the run and ends with the runner's system
+        # files, so without scoping the line cap keeps the tail of unrelated jobs
+        # and the failure is never shown to the model.
         filtered = LogFilter.apply_smart_filtering(
             log_entry["log_content"],
             max_lines=500,
             window_size=20,
             max_tokens=max_tokens,
+            failing_job=log_entry.get("failing_job"),
         )
 
         print(f"  [{i}/{len(logs)}] {repo} - {workflow}", end=" ", flush=True)
