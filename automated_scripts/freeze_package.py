@@ -61,12 +61,78 @@ def digest_file(path: Path) -> Optional[str]:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _read_json(path: Path) -> Optional[dict]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def collect_conditions(models: List[str], hosted_tokens: int, local_tokens: int, effort: str) -> Dict[str, object]:
+    """Identify each condition precisely enough to reproduce the run.
+
+    "local/thesis-qwen3.5:9b-24k" is a local alias, so the name alone does not
+    say which weights ran. `ollama show` gives the architecture, parameter
+    count, quantization and the context the alias was built with, and the
+    Modelfile that produced the alias is checksummed alongside. Captured as text
+    rather than parsed, because the point is an audit trail rather than a
+    structured field this tool reads back.
+    """
+    conditions: Dict[str, object] = {"models": list(models)}
+    for spec in models:
+        provider, _, name = spec.partition("/")
+        entry: Dict[str, object] = {
+            "spec": spec,
+            "provider": provider,
+            "model": name,
+            "max_output_tokens": local_tokens if provider == "local" else hosted_tokens,
+        }
+        if provider == "local":
+            entry["ollama_version"] = _run(["ollama", "--version"])
+            entry["ollama_show"] = _run(["ollama", "show", name])
+            entry["modelfile_sha256"] = digest_file(Path("configs/Modelfile.qwen3.5-thesis"))
+        else:
+            # The provider may route a moving alias to a dated build; the
+            # identifier it returns is recorded per run in run_metadata.json.
+            entry["reasoning_effort"] = effort
+            entry["returned_identifier"] = "recorded per run in run_metadata.json"
+        conditions[provider] = entry
+    return conditions
+
+
+def pilot_state(root: Path) -> Dict[str, object]:
+    """Has a pilot run happened, and over how many cases?
+
+    The pilot rehearses the procedure on a partition the plan permits
+    inspecting, so that the held-out run -- which happens once -- is not the
+    first time the full pipeline is exercised end to end.
+    """
+    experiments = root / "experiments"
+    runs = sorted(p for p in experiments.glob("pilot_*") if p.is_dir()) if experiments.is_dir() else []
+    latest = runs[-1] if runs else None
+    results = sorted(latest.glob("results_*.json")) if latest else []
+    return {
+        "runs": [p.name for p in runs],
+        "latest": latest.name if latest else None,
+        "conditions_present": [p.name for p in results],
+        "complete": bool(latest) and len(results) >= 2,
+    }
+
+
 def collect(config: dict, root: Path) -> Dict[str, object]:
     """Capture every input that could change the held-out outcome."""
     # Imported here so that creating a freeze record does not require the
     # OpenAI SDK to be importable for any other command.
+    from automated_scripts.benchmark_models import DEFAULT_MODELS, MAX_FILTER_TOKENS, REASONING_EFFORT
     from src.api.baseline import DEFAULT_RULES, ruleset_sha256
-    from src.api.llm_service import DIAGNOSIS_PROMPT, DIAGNOSIS_RESPONSE_FORMAT, SYSTEM_MESSAGE
+    from src.api.llm_service import (
+        DIAGNOSIS_PROMPT,
+        DIAGNOSIS_RESPONSE_FORMAT,
+        HOSTED_MAX_TOKENS,
+        LOCAL_MAX_TOKENS,
+        SYSTEM_MESSAGE,
+    )
     from src.api.models import ErrorType
 
     split_path = root / "split_manifest.json"
@@ -85,9 +151,30 @@ def collect(config: dict, root: Path) -> Dict[str, object]:
             "system_message_sha256": digest_text(SYSTEM_MESSAGE),
             "response_schema_sha256": digest_text(json.dumps(DIAGNOSIS_RESPONSE_FORMAT, sort_keys=True)),
             "taxonomy": [item.value for item in ErrorType],
-            "preprocessing": {"max_lines": 500, "window_size": 20, "max_tokens": 12000},
-            "decoding": {"reasoning_effort": "medium", "max_tokens": 4096},
+            "codebook_sha256": digest_file(Path("docs/thesis/CODEBOOK.md")),
+            "preprocessing": {
+                "max_lines": 500,
+                "window_size": 20,
+                "max_tokens": MAX_FILTER_TOKENS,
+                "scoped_to_failing_job": True,
+                "strips_ansi": True,
+            },
+            # The two conditions are given different completion budgets, and
+            # recording one number hid that. The local model needs the larger
+            # share because it emits reasoning before its answer; the hosted
+            # model does not.
+            "decoding": {
+                "reasoning_effort": REASONING_EFFORT,
+                "hosted_max_output_tokens": HOSTED_MAX_TOKENS,
+                "local_max_output_tokens": LOCAL_MAX_TOKENS,
+            },
         },
+        "conditions": collect_conditions(DEFAULT_MODELS, HOSTED_MAX_TOKENS, LOCAL_MAX_TOKENS, REASONING_EFFORT),
+        "approval": {
+            "methodology": _read_json(root / "methodology_approval.json"),
+            "freeze_approved_by": None,
+        },
+        "pilot": pilot_state(root),
         "baseline": {"ruleset_sha256": ruleset_sha256(DEFAULT_RULES), "rule_count": len(DEFAULT_RULES)},
         "dataset": {
             "study_id": config["study_id"],
@@ -127,6 +214,31 @@ def blocking_problems(record: Dict[str, object]) -> List[str]:
     ):
         if not dataset.get(field):
             problems.append(f"{description} is missing")
+
+    # The pilot is the rehearsal. Freezing before it has run means the held-out
+    # experiment -- which happens once and cannot be repeated -- would be the
+    # first end-to-end exercise of the pipeline.
+    pilot = record.get("pilot") or {}
+    if not pilot.get("complete"):
+        problems.append(
+            "no completed pilot run: the held-out experiment would be the first full "
+            "exercise of the pipeline, and it can only be run once"
+        )
+
+    approval = record.get("approval") or {}
+    if not approval.get("freeze_approved_by"):
+        problems.append("no freeze approver recorded; create the record with --approved-by")
+
+    # A single-annotator design is permitted where supervisors have accepted it,
+    # and the acceptance has to be in the record rather than in someone's memory.
+    methodology = approval.get("methodology")
+    if methodology is None:
+        problems.append(
+            "no methodology_approval.json: single-annotator ground truth needs a recorded approval, "
+            "or a second reviewer"
+        )
+    elif not methodology.get("approved_by") or not methodology.get("approved_on"):
+        problems.append("methodology_approval.json names no approver or no date")
     return problems
 
 
@@ -161,11 +273,22 @@ def main() -> int:
     current = collect(config, root)
 
     if args.action == "create":
+        # Record the approver before checking, since one of the gates is that an
+        # approver exists.
+        approval = current.setdefault("approval", {})
+        if isinstance(approval, dict):
+            approval["freeze_approved_by"] = args.approved_by or None
         problems = blocking_problems(current)
-        if problems and not args.allow_dirty:
+        # --allow-dirty forgives exactly one thing: an uncommitted worktree
+        # during a rehearsal. It used to forgive every gate, which would now let
+        # a freeze through with no pilot run and no recorded approval.
+        remaining = [p for p in problems if "worktree is dirty" not in p] if args.allow_dirty else problems
+        if remaining:
             print("ERROR: The system cannot be frozen yet:")
-            for problem in problems:
+            for problem in remaining:
                 print(f"  - {problem}")
+            if args.allow_dirty and len(problems) != len(remaining):
+                print("  (a dirty worktree was forgiven by --allow-dirty; the above were not)")
             return 1
         if record_path.exists():
             print(f"ERROR: A freeze record already exists at {record_path}.")

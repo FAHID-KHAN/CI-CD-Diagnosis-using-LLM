@@ -387,9 +387,13 @@ def print_comparison_table(all_metrics):
         else:
             cost_str = "$0.0000"
         completion = f"{m.get('successful_logs', 0)}/{m.get('total_logs', 0)}"
+        # None where grounding does not apply -- the baseline's cited lines come
+        # out of the filtered log by construction, so the check is vacuous.
+        grounding = m.get("mean_grounding_score")
+        grounding_str = "n/a" if grounding is None else f"{grounding:.1%}"
         print(
             f"  {model_label:<35} {completion:>8} {acc_str:>9} "
-            f"{m.get('mean_grounding_score', 0):>9.1%} {m['avg_execution_time_ms']:>8.0f}ms"
+            f"{grounding_str:>9} {m['avg_execution_time_ms']:>8.0f}ms"
             f" {cost_str:>10}"
         )
 

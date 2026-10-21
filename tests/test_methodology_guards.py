@@ -397,7 +397,7 @@ def test_an_unknown_rule_is_rejected_rather_than_guessed():
 # ── The freeze: what was fixed before the one-time held-out run ───────────
 
 
-def _freeze_record(clean=True, commit="abc123", **dataset):
+def _freeze_record(clean=True, commit="abc123", pilot=True, approver="supervisor", methodology=True, **dataset):
     base = {
         "cohort_sha256": "c1",
         "split_manifest_sha256": "s1",
@@ -409,6 +409,15 @@ def _freeze_record(clean=True, commit="abc123", **dataset):
         "artifact": {"prompt_sha256": "p1", "preprocessing": {"max_tokens": 12000}},
         "baseline": {"ruleset_sha256": "b1"},
         "dataset": base,
+        "pilot": {"complete": pilot, "latest": "pilot_20261021" if pilot else None},
+        "approval": {
+            "freeze_approved_by": approver,
+            "methodology": (
+                {"single_annotator_approved": True, "approved_by": "supervisors", "approved_on": "2026-10-21"}
+                if methodology
+                else None
+            ),
+        },
     }
 
 
@@ -1665,3 +1674,179 @@ def test_identical_evidence_lines_are_reported_as_such():
     result = StatisticalTests.paired_evidence_line_test(a, b)
     assert result["ties"] == 5
     assert "Identical" in result["verdict"]
+
+
+def test_freezing_before_the_pilot_is_blocked():
+    """The held-out run happens once; it must not be the first full exercise."""
+    from automated_scripts.freeze_package import blocking_problems
+
+    problems = blocking_problems(_freeze_record(pilot=False))
+    assert any("pilot" in p for p in problems), problems
+
+
+def test_a_freeze_needs_a_recorded_approver():
+    from automated_scripts.freeze_package import blocking_problems
+
+    assert any("approver" in p for p in blocking_problems(_freeze_record(approver="")))
+
+
+def test_single_annotator_ground_truth_needs_a_recorded_approval():
+    """Permitted where supervisors accepted it, and the acceptance must be on file."""
+    from automated_scripts.freeze_package import blocking_problems
+
+    problems = blocking_problems(_freeze_record(methodology=False))
+    assert any("methodology_approval" in p for p in problems), problems
+
+
+def test_allow_dirty_forgives_only_the_worktree():
+    """It used to forgive every gate, which would pass a freeze with no pilot."""
+    from automated_scripts.freeze_package import blocking_problems
+
+    problems = blocking_problems(_freeze_record(clean=False, pilot=False))
+    survivors = [p for p in problems if "worktree is dirty" not in p]
+    assert any("pilot" in p for p in survivors), survivors
+
+
+# ── Workflow routing: which cases each command actually runs ──────────────
+
+
+def _workflow_source() -> str:
+    import pathlib
+
+    return pathlib.Path("run_workflow.sh").read_text(encoding="utf-8")
+
+
+def test_the_final_run_is_scoped_to_the_held_out_partition():
+    """Without --partition it covered all 81 cases, development included.
+
+    The confirmatory run would then have been scored partly on the cases the
+    system was tuned on. This is asserted on the script because the defect was
+    in the routing, not in the Python it calls.
+    """
+    source = _workflow_source()
+    final = source[source.index("cmd_final()") : source.index("cmd_engineering()")]
+    assert "--partition held_out" in final, "the held-out run must be scoped to its partition"
+
+
+def test_pilot_runs_the_partition_and_pilot_smoke_runs_the_smoke_cohort():
+    """"pilot" ran the five-case smoke cohort, leaving the partition unreachable."""
+    source = _workflow_source()
+    assert "    pilot)          cmd_pilot_partition ;;" in source
+    assert "    pilot-smoke)    cmd_pilot_smoke ;;" in source
+    assert "cmd_pilot_partition() { cmd_partition_run pilot; }" in source
+
+
+def test_the_engineering_workflow_still_uses_the_smoke_pilot():
+    """engineering is the smoke rehearsal and must not touch the study cohort."""
+    source = _workflow_source()
+    start = source.index("cmd_engineering()")
+    # Bound at the function's closing brace; slicing to end-of-file would also
+    # pick up the dispatch table, which legitimately names both pilot commands.
+    engineering = source[start : source.index("\n}", start)]
+    assert "cmd_pilot_smoke" in engineering
+    assert "cmd_pilot_partition" not in engineering
+
+
+def test_the_default_study_config_is_the_active_one():
+    """A stale default silently collects into the wrong study, and study dirs are immutable."""
+    source = _workflow_source()
+    assert 'STUDY_CONFIG="configs/thesis_scrapy_vite_2026.yaml"' in source
+
+
+def test_every_dispatched_command_has_a_function():
+    """A command listed in the dispatch table but never defined fails only at runtime."""
+    import re
+
+    source = _workflow_source()
+    dispatched = set(re.findall(r"^\s+[a-z-]+\)\s+(cmd_[a-z_]+)", source, re.MULTILINE))
+    defined = set(re.findall(r"^(cmd_[a-z_]+)\(\)", source, re.MULTILINE))
+    assert dispatched <= defined, f"dispatched but undefined: {sorted(dispatched - defined)}"
+
+
+def test_an_inapplicable_grounding_score_is_not_averaged_as_zero():
+    """The baseline cites lines straight from the filtered log, so grounding
+    says nothing about it and its records store None. Counting that as zero
+    understates the condition; counting it as one flatters it."""
+    from src.evaluation.report_comparison import compute_model_metrics
+
+    baseline_rows = [
+        {"status": "success", "log_id": f"c{i}", "error_type": "test_failure", "confidence_score": 0.0,
+         "execution_time_ms": 1.0, "grounding_score": None, "failure_lines": [1]}
+        for i in range(3)
+    ]
+    assert compute_model_metrics(baseline_rows)["mean_grounding_score"] is None
+
+    model_rows = [
+        {"status": "success", "log_id": f"c{i}", "error_type": "test_failure", "confidence_score": 0.9,
+         "execution_time_ms": 1.0, "grounding_score": score, "failure_lines": [1]}
+        for i, score in enumerate((1.0, 0.5))
+    ]
+    assert compute_model_metrics(model_rows)["mean_grounding_score"] == 0.75
+
+
+def test_a_mixed_run_averages_only_the_applicable_scores():
+    from src.evaluation.report_comparison import compute_model_metrics
+
+    rows = [
+        {"status": "success", "log_id": "a", "error_type": "test_failure", "confidence_score": 0.9,
+         "execution_time_ms": 1.0, "grounding_score": 1.0, "failure_lines": [1]},
+        {"status": "success", "log_id": "b", "error_type": "test_failure", "confidence_score": 0.9,
+         "execution_time_ms": 1.0, "grounding_score": None, "failure_lines": [1]},
+    ]
+    assert compute_model_metrics(rows)["mean_grounding_score"] == 1.0
+
+
+# ── The permutation test must agree with the data it is given ─────────────
+
+
+def _correct_wrong(log_id: str, correct: bool):
+    from src.evaluation.evaluation import PredictionResult
+
+    return PredictionResult(
+        log_id=log_id,
+        predicted_error_type="test_failure" if correct else "timeout",
+        actual_error_type="test_failure",
+        predicted_lines=[1],
+        actual_lines=[1],
+        confidence=0.9,
+        hallucination_detected=False,
+        execution_time_ms=1.0,
+    )
+
+
+def test_the_permutation_test_matches_mcnemar_on_the_same_data():
+    """The pilot reported p = 0.0 against McNemar's 0.248 on identical data.
+
+    Taking the observed statistic as a.mean() - b.mean() put it one ULP above
+    the identical quantity computed from the difference array, so no permutation
+    ever counted as extreme. Three discordant pairs all favouring one model
+    gives p = 0.25, not zero.
+    """
+    from src.evaluation.evaluation import StatisticalTests
+
+    # 11 cases: 3 where a is right and b wrong, 6 both right, 2 both wrong.
+    a = [_correct_wrong(f"c{i}", True) for i in range(9)] + [_correct_wrong(f"c{i}", False) for i in range(9, 11)]
+    b = [_correct_wrong(f"c{i}", True) for i in range(6)] + [_correct_wrong(f"c{i}", False) for i in range(6, 11)]
+
+    result = StatisticalTests.paired_permutation_test(a, b, n_permutations=2000)
+    assert result["p_value"] > 0.1, result
+    assert result["p_value"] < 0.5, result
+
+
+def test_a_permutation_p_value_is_never_exactly_zero():
+    """Resampling cannot demonstrate p = 0; the floor is set by the draw count."""
+    from src.evaluation.evaluation import StatisticalTests
+
+    a = [_correct_wrong(f"c{i}", True) for i in range(12)]
+    b = [_correct_wrong(f"c{i}", False) for i in range(12)]
+    result = StatisticalTests.paired_permutation_test(a, b, n_permutations=500)
+    assert result["p_value"] > 0.0
+    assert result["p_value"] <= 1.0 / 501 + 1e-9, result
+
+
+def test_identical_predictions_give_a_p_value_of_one():
+    from src.evaluation.evaluation import StatisticalTests
+
+    a = [_correct_wrong(f"c{i}", True) for i in range(8)]
+    b = [_correct_wrong(f"c{i}", True) for i in range(8)]
+    assert StatisticalTests.paired_permutation_test(a, b, n_permutations=200)["p_value"] == 1.0

@@ -257,7 +257,14 @@ def next_action(stages: list) -> str:
     if ground_truth.state == TODO:
         return "./run_workflow.sh annotate ANNOTATOR=<your-id>"
     if ground_truth.state in (PARTIAL, BLOCKED):
-        if any("no_independent_verification" in note or "single_annotator" in note for note in ground_truth.notes):
+        # Only recommend a second reviewer where the absence of one still
+        # blocks. Once a recorded approval downgrades it to "disclosed", the
+        # single-annotator design is the approved design and the remaining work
+        # is annotation.
+        if any(
+            note.startswith("[blocking]") and ("no_independent_verification" in note or "single_annotator" in note)
+            for note in ground_truth.notes
+        ):
             return "./run_workflow.sh verify VERIFIER=<second-reviewer-id>"
         return "./run_workflow.sh annotate ANNOTATOR=<your-id>"
     if by_name["Held-out separation"].state == BLOCKED:

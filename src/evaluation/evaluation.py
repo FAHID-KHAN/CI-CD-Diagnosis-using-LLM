@@ -196,14 +196,23 @@ class StatisticalTests:
 
         a_correct = np.array([int(item.predicted_error_type == item.actual_error_type) for item in predictions_a])
         b_correct = np.array([int(item.predicted_error_type == item.actual_error_type) for item in predictions_b])
-        observed = float(a_correct.mean() - b_correct.mean())
         differences = a_correct - b_correct
+        # Compute the observed statistic from the same array the permutations
+        # are drawn from. Taking it as a.mean() - b.mean() instead put it one
+        # ULP above the identical quantity -- 9/11 - 6/11 evaluates above 3/11 --
+        # so no permutation ever counted as extreme and the pilot reported
+        # p = 0.0 where the correct value was 0.25.
+        observed = abs(float(differences.mean()))
         rng = np.random.default_rng(seed)
+        tolerance = 1e-12
         extreme = sum(
-            abs(float((differences * rng.choice([-1, 1], size=len(differences))).mean())) >= abs(observed)
+            abs(float((differences * rng.choice([-1, 1], size=len(differences))).mean())) >= observed - tolerance
             for _ in range(n_permutations)
         )
-        p_value = float(extreme / n_permutations)
+        # The unbiased estimator. A permutation test cannot demonstrate p = 0:
+        # the floor is set by how many permutations were drawn, and reporting a
+        # bare zero overstates what the resampling can support.
+        p_value = float((extreme + 1) / (n_permutations + 1))
         return {
             "observed_accuracy_diff": round(observed, 4),
             "p_value": round(p_value, 6),

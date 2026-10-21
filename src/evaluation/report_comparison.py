@@ -40,6 +40,12 @@ RESULTS_SUFFIX = ".json"
 # ── Metrics ───────────────────────────────────────────────────────────────
 
 
+def _mean_or_none(values: List[object]) -> Optional[float]:
+    """Mean of the values that apply, or None when none do."""
+    applicable = [float(v) for v in values if isinstance(v, (int, float)) and not isinstance(v, bool)]
+    return round(sum(applicable) / len(applicable), 3) if applicable else None
+
+
 def compute_model_metrics(results: List[dict], ground_truth: Optional[List[dict]] = None) -> dict:
     """Compute summary metrics for one model's results."""
     attempted = len(results)
@@ -71,7 +77,12 @@ def compute_model_metrics(results: List[dict], ground_truth: Optional[List[dict]
         "avg_confidence": round(avg_confidence, 3),
         "avg_execution_time_ms": round(avg_time, 1),
         "error_type_distribution": error_dist,
-        "mean_grounding_score": round(sum(r.get("grounding_score", 0) for r in successful) / n, 3) if n else 0.0,
+        # The baseline cites lines taken straight out of the filtered log, so
+        # grounding is trivially satisfied and carries no information about it;
+        # its records store None. Averaging None as zero would understate the
+        # condition and as one would flatter it, so inapplicable scores are
+        # excluded from the mean and the result is None when none apply.
+        "mean_grounding_score": _mean_or_none([r.get("grounding_score") for r in successful]),
         "hallucination_rate": (
             round(sum(bool(r.get("hallucination_detected")) for r in successful) / n, 3) if n else 0.0
         ),

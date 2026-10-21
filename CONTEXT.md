@@ -22,14 +22,15 @@ Supervisors: Jussi Rasku, Md Mahade Hasan. Thesis seminar: 9 November 2026.
 
 | | |
 | --- | --- |
-| Code | Complete. 170 tests, lint and type checks pass. |
-| Study data | `thesis_scrapy_vite_2026` is the study cohort: 131 raw, 81 eligible after re-triage, re-split (11 / 11 / 31 plus 28 reserve), **11 of 53 annotated** -- all development, all verified in the correct frame, mean preprocessing recall 91%. One paired development run complete. Superseded: `thesis_pair_2026` (27 annotations, all void -- django and gradle both dropped) and `thesis_gradle_scrapy_2026` (78 eligible, never annotated). |
+| Code | Complete. 184 tests, lint and type checks pass. |
+| Study data | `thesis_scrapy_vite_2026` is the study cohort: 131 raw, 81 eligible after re-triage, re-split (11 / 11 / 31 plus 28 reserve), **22 of 53 annotated** -- development 11/11, pilot 11/11, held_out 0/31. Two paired runs complete, each with three conditions. Superseded: `thesis_pair_2026` (27 annotations, all void -- django and gradle both dropped) and `thesis_gradle_scrapy_2026` (78 eligible, never annotated). |
 | Repositories | scrapy/scrapy and vitejs/vite, decided 18 October 2026 |
 | Active config | `configs/thesis_scrapy_vite_2026.yaml` — scrapy/scrapy (100) and vitejs/vite (60), sampling window 14–45 days. Cohort collected 18 October; do not edit, its SHA-256 is in the manifests. |
-| Evaluation plan | **The author is rewriting it and will send it.** `EVALUATION_PLAN.md` currently holds a drafted §3.1, §3.2 and an amended §10 — treat these as material to rework, not as the version going out. |
+| Evaluation plan | Sent and approved. `EVALUATION_PLAN.md` holds the drafted §3.1, §3.2 and amended §10; reconcile it with whatever was actually sent. |
 | Progress report | `docs/thesis/PROGRESS_REPORT_2026-10-21.md` — standalone, written 21 October |
-| Next | Read the codebook, then annotate the 11 pilot cases |
-| Blocked on | Supervisor approval of the evaluation method; the held-out run stays gated |
+| Next | Decide the evidence-line metric question, then annotate the 31 held-out cases |
+| Approval | **Granted 21 October 2026.** Single-annotator ground truth accepted. Recorded in `data/studies/thesis_scrapy_vite_2026/methodology_approval.json` — verify its fields against the actual message. |
+| Blocked on | Annotation. The held-out run is gated on a completed pilot and a freeze record, not on approval. |
 
 Check the live state at any time:
 
@@ -1139,11 +1140,13 @@ system; they are not findings.
 Every case in the cohort is annotated `test_failure`, so the measure has no
 variance to work with and both conditions sit at the ceiling.
 
-*Qualified 21 October 2026:* this was first written as "it means nothing", on
-the assumption that any classifier would reach 11/11. The rule-based baseline
-scores **2 of 11**, so category accuracy does separate the models from fixed
-rules -- decisively. It is saturated between the two models, not uninformative
-in general. See the baseline section below.
+*Qualified twice, 21 October 2026.* First written as "it means nothing", on the
+assumption that any classifier would reach 11/11; the rule-based baseline scores
+**2 of 11**, so the measure does separate models from fixed rules. Then the
+pilot showed it separates the two models from each other as well -- 81.8%
+against 54.5% -- because that partition contains four categories. The
+saturation was a property of this development sample, not of the cohort. See the
+pilot section below.
 
 **Evidence lines do discriminate, and the two models are far apart:**
 
@@ -1275,6 +1278,140 @@ conditions in `all_results`, and the baseline runs first, so adding it would
 have silently reported *baseline against hosted* as the model comparison. The
 baseline is now explicitly excluded from that pair, and each model additionally
 gets a `versus_baseline` entry carrying both McNemar and the evidence-line test.
+
+## Supervisor approval, and the workflow defects it exposed
+
+21 October 2026. Approval granted, including the single-annotator design. That
+removed the methodology hold and immediately showed that the tool had never been
+made partition-aware after the split was introduced. Six defects, all from one
+cause.
+
+**`final` ran the whole cohort.** `cmd_final` passed no `--partition`, so the
+held-out experiment would have covered all 81 eligible cases -- every
+development and pilot case the system was tuned on included -- and the
+confirmatory result would have been scored partly on its own tuning data. The
+most serious of the six. Now `--partition held_out`, asserted by a test.
+
+**The pilot partition was unreachable.** `pilot` ran the five-case smoke cohort,
+so the 11 pilot cases had no command at all. `pilot` now runs the partition and
+the smoke rehearsal is `pilot-smoke`, matching the existing `-smoke` naming.
+`engineering` still uses the smoke one.
+
+**Ground-truth progress was counted against the whole cohort.** The stage was
+complete only at 81 annotations; 53 are ever annotated, so it could never
+complete -- and `cmd_final` requires that stage. The held-out run was
+unreachable by arithmetic. Progress is now reported per partition:
+`development 11/11, pilot 0/11, held_out 0/31`.
+
+**Status advised re-collecting a fixed cohort.** `next_action` returned
+`cohort` whenever collection was `PARTIAL`, which it permanently is -- 131 of
+160 requested, because GitHub drops runs from the failure listing. Once triage
+has produced a cohort it is immutable and re-collection is refused, so the
+advice was simply wrong.
+
+**The single-annotator guard still refused after approval.** Supervisor approval
+does not clear a check inside the tool. Rather than weakening the guard, the two
+findings are downgraded from `blocking` to a new `disclosed` severity when
+`methodology_approval.json` is present and names an approver and a date. A
+disclosed finding never disappears and prints ahead of warnings -- the point of
+accepting a weakness is that it is reported, not that it stops being true. A
+recorded file rather than a command-line flag, because the approval is an
+external event with a date and because a flag would leave no trace. `next_action`
+no longer suggests recruiting a verifier.
+
+**The freeze record was thin, and nothing required a pilot first.** It now
+carries each condition's identity -- the hosted route and reasoning effort, and
+for the local alias the `ollama show` output with its architecture, parameter
+count, quantization and context, plus the Modelfile checksum, because
+`thesis-qwen3.5:9b-24k` is an alias and the name alone does not say which weights
+ran. The two completion budgets are recorded separately (4,096 hosted, 7,168
+local) where one number previously hid the difference. Added: the codebook
+checksum, the methodology approval, the freeze approver, and the pilot state.
+
+Three new gates refuse a freeze: **no completed pilot run** (the held-out
+experiment happens once and must not be the first full exercise of the
+pipeline), **no recorded freeze approver**, and **no methodology approval**
+where ground truth rests on one annotator. `--allow-dirty` previously forgave
+every gate; it now forgives only an uncommitted worktree.
+
+**The shell routing had no tests**, which is how four of these survived while
+170 Python tests passed. Five routing tests now assert what each command runs:
+that `final` is scoped to held-out, that `pilot` and `pilot-smoke` are distinct,
+that `engineering` uses the smoke pilot, that the default study config is the
+active one, and that every dispatched command has a function behind it.
+
+## The pilot run, 21 October 2026
+
+`experiments/pilot_20261021_132809`, eleven pilot cases, three conditions, no
+parse failures. Results refine the system; they are not findings.
+
+| condition | category | evidence F1 | grounding | time/case | cost |
+| --- | --- | --- | --- | --- | --- |
+| baseline, keyword rules | 9.1% | -- | n/a | 0 ms | $0 |
+| `openai/gpt-5.6-terra` | **81.8%** | 0.32 | 100% | 12.9 s | $0.44 |
+| `local/thesis-qwen3.5:9b-24k` | 54.5% | 0.16 | 68.5% | **495 s** | $0 |
+
+**Category accuracy discriminates, and the earlier claim that it was dead was
+wrong twice over.** The pilot contains four categories -- `test_failure`,
+`dependency_error`, `timeout`, `network_error` -- and with that variance the
+measure separates all three conditions cleanly. The development set was
+single-category by accident of sampling, not because the cohort is
+single-category. Corrected in the development-run section above.
+
+Significance: hosted beats local by 27 percentage points on category but with
+only three discordant pairs that is **not significant** (McNemar p = 0.248). On
+evidence lines it is -- hosted ahead in 10 of 11, p = 0.002. Against the
+baseline, hosted is significant on category (p = 0.013) and local is not
+(p = 0.074).
+
+**The local model's latency is a finding for SRQ1:** 495 s per case against the
+hosted model's 12.9 s, with one case at 1,125 s. Roughly 40x, on identical
+input.
+
+### The permutation test reported p = 0.0, and was wrong
+
+It printed `p = 0.0` where McNemar reported 0.248 on identical data. The
+observed statistic was computed as `a.mean() - b.mean()`, which lands one unit
+in the last place above the same quantity computed from the difference array --
+in floating point `9/11 - 6/11 > 3/11` -- so **no permutation ever counted as
+extreme** and the p-value collapsed to zero. The correct value for three
+discordant pairs all favouring one model is 0.25.
+
+Fixed by computing the observed statistic from the array the permutations are
+drawn from, with a tolerance on the comparison. The p-value is now the unbiased
+estimator `(extreme + 1) / (n + 1)`: resampling cannot demonstrate p = 0, since
+the floor is set by how many permutations were drawn. Recomputed on the pilot
+data the two tests agree -- McNemar 0.248, permutation 0.257.
+
+A reported p = 0.0 would not have survived examination. Three tests now cover
+it, one of which asserts the two tests agree on the same data.
+
+### Evidence-line recall is confounded with annotation breadth
+
+Evidence F1 fell from 0.66 and 0.34 on development to 0.32 and 0.16 on pilot.
+The cause is not annotation drift: the median annotated line count is 21 on
+development and 23 on pilot.
+
+The cause is that **the models cite a roughly constant number of lines** -- 6 to
+16, mostly 7 to 12 -- however many the annotation marks. Where a case is
+annotated with 54 lines, a model citing 6 is capped at 11% recall even if all
+six are correct. Across the 22 cases the correlation between annotated line
+count and the hosted model's F1 is **r = -0.41**, and cases with 34 or more
+annotated lines average F1 0.24 against 0.55 for the rest.
+
+So recall, and therefore F1, partly measures how broadly the annotation marks
+evidence rather than how well the model locates it. §0 of the codebook fixed
+*what kind* of line counts as evidence; it does not fix *how many*.
+
+**Precision is the robust measure here** -- 0.5 to 1.0 across both partitions,
+largely independent of annotation breadth. It also matches what the system was
+asked to do: the prompt asks the model to point at the failure, not to enumerate
+every line of it. Reporting precision as primary, recall as secondary with this
+confound stated, and the citation count as a descriptive statistic, is the
+honest treatment. The alternative -- constraining annotation to a minimal
+sufficient set -- would mean re-annotating 22 cases.
+
+**Open:** which of those two to adopt, before held-out annotation begins.
 
 ## Open decisions
 

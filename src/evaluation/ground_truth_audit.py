@@ -13,9 +13,11 @@ reports; it never rewrites an annotation.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from src.evaluation.study_io import load_ground_truth
@@ -53,7 +55,11 @@ UNCERTAINTY_PHRASES = (
     "could not determine",
 )
 
-SEVERITY_ORDER = {"blocking": 0, "warning": 1}
+# "disclosed" sits between the two on purpose. A disclosed finding does not
+# block, because a supervisor has accepted the design it describes, but it is
+# printed ahead of warnings and never disappears: the point of accepting a
+# weakness is that it is reported, not that it stops being true.
+SEVERITY_ORDER = {"blocking": 0, "disclosed": 1, "warning": 2}
 
 
 @dataclass
@@ -161,7 +167,39 @@ def root_cause_problem(value: object) -> Optional[str]:
     return None
 
 
-def audit_annotations(annotations: List[dict], path: str = "", exists: bool = True) -> GroundTruthAudit:
+def load_methodology_approval(path: str | Path) -> Optional[dict]:
+    """Read a recorded supervisor approval, if one sits beside the ground truth.
+
+    The single-annotator findings are blocking by default, which is right: a
+    tool should not let accuracy claims rest on one person's unchecked judgement
+    by accident. Where supervisors have accepted that design, the finding is
+    downgraded to ``disclosed`` rather than removed, and the approval's own
+    details travel into the message.
+
+    This is a recorded file rather than a command-line flag because the approval
+    is an external event with a date and an approver, and because a flag would
+    let the guard be bypassed in a single invocation that leaves no trace.
+    """
+    try:
+        record = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(record, dict):
+        return None
+    if not record.get("single_annotator_approved"):
+        return None
+    if not record.get("approved_by") or not record.get("approved_on"):
+        # An approval without an approver and a date is not evidence of anything.
+        return None
+    return record
+
+
+def audit_annotations(
+    annotations: List[dict],
+    path: str = "",
+    exists: bool = True,
+    approval: Optional[dict] = None,
+) -> GroundTruthAudit:
     """Check a list of annotation records against the agreed requirements."""
     audit = GroundTruthAudit(path=path, exists=exists, case_count=len(annotations))
     if not annotations:
@@ -269,8 +307,14 @@ def audit_annotations(annotations: List[dict], path: str = "", exists: bool = Tr
             audit.findings.append(
                 Finding(
                     "no_independent_verification",
-                    "blocking",
-                    "No second reviewer distinct from the annotator has verified this case.",
+                    "disclosed" if approval else "blocking",
+                    "No second reviewer distinct from the annotator has verified this case."
+                    + (
+                        f" Single-annotator ground truth approved by {approval['approved_by']}"
+                        f" on {approval['approved_on']}."
+                        if approval
+                        else ""
+                    ),
                     case_id,
                 )
             )
@@ -284,17 +328,31 @@ def audit_annotations(annotations: List[dict], path: str = "", exists: bool = Tr
         audit.findings.append(
             Finding(
                 "single_annotator",
-                "blocking",
+                "disclosed" if approval else "blocking",
                 f"{audit.case_count - audit.verified_cases} case(s) rest on one annotator "
-                f"({annotators[0]}) with no independent sign-off, so accuracy claims would rest "
-                "on the researcher's own judgement.",
+                f"({annotators[0]}) with no independent sign-off, so accuracy claims rest "
+                "on the researcher's own judgement."
+                + (
+                    f" Approved by {approval['approved_by']} on {approval['approved_on']}."
+                    f" Mitigations: {approval.get('mitigations', 'not recorded')}."
+                    " Inter-rater reliability must not be claimed."
+                    if approval
+                    else ", so accuracy claims would rest on the researcher's own judgement."
+                ),
             )
         )
     return audit
 
 
-def audit_ground_truth_file(path: str) -> GroundTruthAudit:
-    """Load and audit one ground-truth file, tolerating a missing or bad file."""
+APPROVAL_FILENAME = "methodology_approval.json"
+
+
+def audit_ground_truth_file(path: str, approval_path: Optional[str] = None) -> GroundTruthAudit:
+    """Load and audit one ground-truth file, tolerating a missing or bad file.
+
+    A recorded approval is looked for beside the study directory by default, so
+    every caller picks it up without having to know about it.
+    """
     if not path or not os.path.exists(path):
         audit = GroundTruthAudit(path=path or "", exists=False)
         audit.findings.append(
@@ -306,4 +364,7 @@ def audit_ground_truth_file(path: str) -> GroundTruthAudit:
         audit = GroundTruthAudit(path=path, exists=True)
         audit.findings.append(Finding("unreadable_ground_truth", "blocking", f"The ground-truth file is {status}."))
         return audit
-    return audit_annotations(annotations, path=path)
+    if approval_path is None:
+        # ground_truth/ground_truth.json -> <study>/methodology_approval.json
+        approval_path = str(Path(path).resolve().parent.parent / APPROVAL_FILENAME)
+    return audit_annotations(annotations, path=path, approval=load_methodology_approval(approval_path))
