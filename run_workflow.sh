@@ -66,7 +66,8 @@ Commands:
   score             Blind 0/1/2 scoring of model root causes    (needs SCORER=)
   freeze            Create or verify the freeze record          (create|verify)
   develop           Paired run on the development partition      (MODELS= optional)
-  pilot             Paired five-case engineering run on the smoke cohort
+  pilot             Paired run on the pilot partition           (MODELS= optional)
+  pilot-smoke       Paired five-case engineering run on the smoke cohort
   compare           Terminal comparison plus the self-contained HTML page
   engineering       smoke -> pilot -> compare, stopping at any human step
   final             The held-out paired experiment (refuses unless every gate passes)
@@ -201,10 +202,12 @@ cmd_annotate() {
     "${PYTHON}" automated_scripts/annotate_blind.py "${args[@]}"
 }
 
-cmd_development() {
-    # The development partition is the only one the plan permits iterating on,
-    # so this is the run to use while refining the prompt and the codebook.
-    # Held-out stays behind ./run_workflow.sh final and its gates.
+cmd_partition_run() {
+    # One runner for the two partitions the plan permits iterating on:
+    # development, where the prompt and codebook are refined, and pilot, which
+    # rehearses the procedure before the held-out run happens once. Held-out
+    # stays behind ./run_workflow.sh final and its gates.
+    local partition="$1"
     local dir="${STUDY_DIR}"
     if [[ -z "${dir}" ]]; then
         dir="$("${PYTHON}" -c "
@@ -213,12 +216,12 @@ from automated_scripts.study_utils import load_study_config, study_directory
 config, _ = load_study_config('${STUDY_CONFIG}')
 print(study_directory(config))")"
     fi
-    local out="${dir}/experiments/development_$(date +%Y%m%d_%H%M%S)"
-    step "Paired development run -> ${out}"
+    local out="${dir}/experiments/${partition}_$(date +%Y%m%d_%H%M%S)"
+    step "Paired ${partition} run -> ${out}"
     local args=(
         --input "${dir}/triaged/eligible_logs.json"
         --ground-truth "${dir}/ground_truth/ground_truth.json"
-        --partition development
+        --partition "${partition}"
         --output-dir "${out}"
     )
     # A single condition is allowed here for iteration; benchmark_models.py
@@ -226,6 +229,10 @@ print(study_directory(config))")"
     [[ -n "${MODELS}" ]] && args+=(--models "${MODELS}")
     "${PYTHON}" automated_scripts/benchmark_models.py "${args[@]}"
 }
+
+cmd_development() { cmd_partition_run development; }
+
+cmd_pilot_partition() { cmd_partition_run pilot; }
 
 cmd_split() {
     local args=(--study-config "${STUDY_CONFIG}")
@@ -278,8 +285,8 @@ cmd_verify() {
     "${PYTHON}" automated_scripts/annotate_blind.py "${args[@]}"
 }
 
-cmd_pilot() {
-    step "Paired pilot on the smoke cohort"
+cmd_pilot_smoke() {
+    step "Paired pilot on the five-case smoke cohort"
     "${PYTHON}" automated_scripts/benchmark_models.py \
         --input "${SMOKE_ROOT}/triaged/eligible_logs.json" \
         --ground-truth "${SMOKE_ROOT}/ground_truth/ground_truth.json" \
@@ -308,9 +315,13 @@ print(study_directory(config))")"
         || fail "The system no longer matches its freeze record. Investigate before running."
 
     step "Final paired experiment"
+    # --partition held_out is not optional. Without it the run covers all 81
+    # eligible cases, including every development and pilot case the system was
+    # tuned on, and the confirmatory result would be contaminated by them.
     "${PYTHON}" automated_scripts/benchmark_models.py \
         --input "${study_root}/triaged/eligible_logs.json" \
         --ground-truth "${study_root}/ground_truth/ground_truth.json" \
+        --partition held_out \
         --output-dir "${study_root}/experiments/final_001"
 }
 
@@ -327,7 +338,7 @@ cmd_engineering() {
         printf '  ./run_workflow.sh annotate-smoke ANNOTATOR=your-stable-id\n\n'
         exit 2
     fi
-    cmd_pilot
+    cmd_pilot_smoke
     step "Comparison"
     "${PYTHON}" automated_scripts/compare_reports.py --experiment "${SMOKE_ROOT}/experiments/pilot_002"
     STUDY_DIR="${SMOKE_ROOT}"
@@ -352,7 +363,8 @@ case "${COMMAND}" in
     score)          cmd_score ;;
     freeze)         cmd_freeze ;;
     develop)        cmd_development ;;
-    pilot)          cmd_pilot ;;
+    pilot)          cmd_pilot_partition ;;
+    pilot-smoke)    cmd_pilot_smoke ;;
     compare)        "${PYTHON}" automated_scripts/compare_reports.py ;;
     engineering)    cmd_engineering ;;
     final)          cmd_final ;;

@@ -109,15 +109,49 @@ def stage_triage(root: Path) -> Stage:
     return Stage("Triage", DONE, f"{eligible} eligible, {excluded or 0} excluded with reasons", notes)
 
 
+# Reserve is surplus held outside the confirmatory analysis, so it is never
+# counted as work owed. Annotating it would not advance the study.
+ANNOTATED_PARTITIONS = ("development", "pilot", "held_out")
+
+
+def annotation_targets(root: Path) -> dict:
+    """Cases owed per partition, from the split manifest.
+
+    Progress has to be reported against the partitions rather than the whole
+    cohort. The cohort is 81 cases and only 53 are ever annotated, so counting
+    against 81 made the ground-truth stage permanently incomplete -- and the
+    held-out run requires that stage, so the experiment was unreachable.
+    """
+    manifest = read_json(root / "split_manifest.json")
+    if not isinstance(manifest, dict):
+        return {}
+    partitions = manifest.get("partitions", {})
+    return {name: list(partitions.get(name, [])) for name in ANNOTATED_PARTITIONS if partitions.get(name)}
+
+
 def stage_ground_truth(root: Path) -> Stage:
     cohort = count_list(root / "triaged" / "eligible_logs.json")
+    targets = annotation_targets(root)
+    owed = sum(len(ids) for ids in targets.values()) or cohort
     path = root / "ground_truth" / "ground_truth.json"
     if not path.exists():
-        return Stage("Ground truth", TODO, f"0 of {cohort or '?'} cases annotated")
+        return Stage("Ground truth", TODO, f"0 of {owed or '?'} cases annotated")
     audit = audit_ground_truth_file(str(path))
-    detail = f"{audit.case_count} of {cohort or '?'} annotated, " f"{audit.verified_cases} independently verified"
+
     notes = [line for line in audit.summary_lines()]
-    if audit.is_defensible and cohort and audit.case_count >= cohort:
+    if targets:
+        done = {a.get("log_id") for a in (read_json(path) or {}).get("annotations", [])}
+        per_partition = {name: len(done & set(ids)) for name, ids in targets.items()}
+        detail = f"{audit.case_count} of {owed} annotated — " + ", ".join(
+            f"{name} {per_partition[name]}/{len(targets[name])}" for name in targets
+        )
+        complete = all(per_partition[name] >= len(ids) for name, ids in targets.items())
+    else:
+        detail = f"{audit.case_count} of {cohort or '?'} annotated"
+        complete = bool(cohort) and audit.case_count >= cohort
+    detail += f", {audit.verified_cases} independently verified"
+
+    if audit.is_defensible and complete:
         return Stage("Ground truth", DONE, detail, notes)
     if audit.blocking:
         return Stage("Ground truth", BLOCKED, detail, notes)
@@ -208,9 +242,16 @@ def next_action(stages: list) -> str:
         if not any(stage.name.startswith("Experiment ") for stage in stages):
             return "./run_workflow.sh pilot"
         return "./run_workflow.sh compare"
-    if by_name["Collection"].state in (TODO, PARTIAL):
+    # Collection reports PARTIAL when it finished short of its requested count,
+    # which is normal: GitHub drops runs from the failure listing and some logs
+    # are undownloadable. Once triage has produced a cohort, that cohort is
+    # immutable and re-running collection would be refused, so advising it is
+    # actively wrong.
+    if by_name["Triage"].state == DONE:
+        pass
+    elif by_name["Collection"].state in (TODO, PARTIAL):
         return "./run_workflow.sh cohort"
-    if by_name["Triage"].state in (TODO, PARTIAL):
+    elif by_name["Triage"].state in (TODO, PARTIAL):
         return "./run_workflow.sh cohort --from 3"
     ground_truth = by_name["Ground truth"]
     if ground_truth.state == TODO:
