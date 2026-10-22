@@ -22,13 +22,13 @@ Supervisors: Jussi Rasku, Md Mahade Hasan. Thesis seminar: 9 November 2026.
 
 | | |
 | --- | --- |
-| Code | Complete. 184 tests, lint and type checks pass. |
+| Code | Complete. 186 tests, lint and type checks pass. |
 | Study data | `thesis_scrapy_vite_2026` is the study cohort: 131 raw, 81 eligible after re-triage, re-split (11 / 11 / 31 plus 28 reserve), **22 of 53 annotated** -- development 11/11, pilot 11/11, held_out 0/31. Two paired runs complete, each with three conditions. Superseded: `thesis_pair_2026` (27 annotations, all void -- django and gradle both dropped) and `thesis_gradle_scrapy_2026` (78 eligible, never annotated). |
 | Repositories | scrapy/scrapy and vitejs/vite, decided 18 October 2026 |
 | Active config | `configs/thesis_scrapy_vite_2026.yaml` — scrapy/scrapy (100) and vitejs/vite (60), sampling window 14–45 days. Cohort collected 18 October; do not edit, its SHA-256 is in the manifests. |
 | Evaluation plan | Sent and approved. `EVALUATION_PLAN.md` holds the drafted §3.1, §3.2 and amended §10; reconcile it with whatever was actually sent. |
 | Progress report | `docs/thesis/PROGRESS_REPORT_2026-10-21.md` — standalone, written 21 October |
-| Next | Decide the evidence-line metric question, then annotate the 31 held-out cases |
+| Next | Annotate the 31 held-out cases, then freeze and run `final` once |
 | Approval | **Granted 21 October 2026.** Single-annotator ground truth accepted. Recorded in `data/studies/thesis_scrapy_vite_2026/methodology_approval.json` — verify its fields against the actual message. |
 | Blocked on | Annotation. The held-out run is gated on a completed pilot and a freeze record, not on approval. |
 
@@ -1403,15 +1403,49 @@ So recall, and therefore F1, partly measures how broadly the annotation marks
 evidence rather than how well the model locates it. §0 of the codebook fixed
 *what kind* of line counts as evidence; it does not fix *how many*.
 
-**Precision is the robust measure here** -- 0.5 to 1.0 across both partitions,
-largely independent of annotation breadth. It also matches what the system was
-asked to do: the prompt asks the model to point at the failure, not to enumerate
-every line of it. Reporting precision as primary, recall as secondary with this
-confound stated, and the citation count as a descriptive statistic, is the
-honest treatment. The alternative -- constraining annotation to a minimal
-sufficient set -- would mean re-annotating 22 cases.
+**Precision is largely independent of annotation breadth** -- 0.5 to 1.0 across
+both partitions -- and it matches what the prompt asks for: point at the
+failure, not enumerate it.
 
-**Open:** which of those two to adopt, before held-out annotation begins.
+### Resolved 21 October 2026: both statistics, split by claim
+
+The first instinct was to make precision the single primary measure. That was
+based on an overstatement of the confound, and switching wholesale would have
+cost a real result for nothing.
+
+**Breadth varies between cases, but within a case both conditions face the same
+annotation.** In a *paired* test it therefore cancels: it damages the absolute
+figure, not the contrast. Measured on both runs, hosted first:
+
+| run | precision | F1 | mean lines cited |
+| --- | --- | --- | --- |
+| development | 0.89 / 0.77, p = 0.008 | 0.66 / 0.34, p = 0.001 | 13.1 / 6.2 |
+| pilot | 0.69 / 0.59, **p = 0.266** | 0.32 / 0.16, **p = 0.002** | 10.1 / 4.5 |
+
+Precision alone loses the pilot comparison. The contract, settled before
+freezing:
+
+* **F1 is the single hypothesis test.** Breadth cancels within pairs, and F1
+  uses signal precision discards. One p-value is reported, and it is this one.
+* **Precision is a descriptive capability figure with no p-value.** "When the
+  system cites a line, is it evidence?" is not a claim about a difference
+  between conditions, and two tests over the same pairs would be multiple
+  testing without a correction.
+
+A test asserts the result carries exactly one key containing `p_value`.
+
+**What precision hides is in the last column.** The local model cites roughly
+half as many lines -- 4.5 against 10.1 -- which is a genuine behavioural
+difference, and precision is blind to it: a model citing one correct line scores
+1.00. The mean citation count is therefore reported beside both statistics, and
+a test documents the blind spot by asserting that precision ties a thorough
+model with a minimal one while F1 and the citation count separate them.
+
+**For the write-up:** report the absolute capability as precision and the model
+comparison on F1. A single headline "evidence accuracy" figure would be
+answering two questions at once.
+
+No re-annotation is needed, so the 22 existing annotations stand.
 
 ## Open decisions
 

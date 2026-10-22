@@ -84,16 +84,40 @@ class StatisticalTests:
         p = 0.001. The category test was not wrong, it was answering a question
         the data could not distinguish.
 
-        Evidence-line F1 varies case by case whatever the category distribution,
-        so it is what SRQ1 can actually be tested on. Scores here come from
-        ``evidence_line_scores`` rather than a second implementation, and cases
-        with no annotated lines are unscorable and excluded rather than counted
-        as zero.
+        Evidence-line scores vary case by case whatever the category
+        distribution, so they are what SRQ1 can actually be tested on. Scores
+        come from ``evidence_line_scores`` rather than a second implementation,
+        and cases with no annotated lines are unscorable and excluded rather
+        than counted as zero.
+
+        **F1 is the tested statistic; precision is reported, not tested.** The
+        models cite a roughly constant number of lines -- 6 to 16 across the
+        development and pilot runs -- however many the annotation marks, so a
+        case annotated with 54 lines caps recall at about 11% whatever the model
+        does. Measured over 22 cases, the correlation between annotated line
+        count and F1 is -0.41. Recall and F1 therefore carry information about
+        how broadly the annotation marks evidence, while precision -- of the
+        lines a model cited, how many were evidence -- does not, and matches what
+        the prompt asks for: point at the failure, not enumerate it.
+
+        Within a case both conditions face the same annotation, so the breadth
+        cancels in a paired contrast: it damages the absolute figure, not the
+        comparison. F1 therefore carries the test and uses signal precision
+        discards, while precision carries the absolute capability claim and is
+        reported without a p-value. Two p-values over the same pairs would be
+        multiple testing without a correction, and the claim precision supports
+        is not a claim about a difference.
+
+        The mean number of lines each condition cites is reported alongside,
+        because precision alone would reward a model that cited one line and
+        stopped.
         """
         from src.evaluation.category_metrics import evidence_line_scores
 
         by_id_b = {p.log_id: p for p in predictions_b}
-        paired = []
+        paired: List[tuple] = []
+        secondary: List[tuple] = []
+        citations: List[tuple] = []
         for item in predictions_a:
             other = by_id_b.get(item.log_id)
             if other is None:
@@ -102,7 +126,9 @@ class StatisticalTests:
             second = evidence_line_scores(predicted=other.predicted_lines, actual=other.actual_lines)
             if not (first["scorable"] and second["scorable"]):
                 continue
-            paired.append((float(first["f1"]), float(second["f1"])))
+            paired.append((float(first["precision"]), float(second["precision"])))
+            secondary.append((float(first["f1"]), float(second["f1"])))
+            citations.append((len(item.predicted_lines or []), len(other.predicted_lines or [])))
 
         if len(paired) < 2:
             return {
@@ -110,12 +136,36 @@ class StatisticalTests:
                 "verdict": "Too few scorable pairs for a paired test",
             }
 
-        first_scores = [a for a, _ in paired]
-        second_scores = [b for _, b in paired]
-        a_wins = sum(1 for a, b in paired if a > b)
-        b_wins = sum(1 for a, b in paired if b > a)
-        ties = sum(1 for a, b in paired if a == b)
-        mean_difference = float(np.mean(first_scores) - np.mean(second_scores))
+        precision_a = [a for a, _ in paired]
+        precision_b = [b for _, b in paired]
+        f1_a = [a for a, _ in secondary]
+        f1_b = [b for _, b in secondary]
+
+        # One hypothesis test, on F1. Precision is reported as a descriptive
+        # capability figure and is deliberately not tested: two p-values over
+        # the same pairs would be multiple testing without a correction, and the
+        # absolute claim precision supports is not a claim about a difference.
+        a_wins = sum(1 for a, b in secondary if a > b)
+        b_wins = sum(1 for a, b in secondary if b > a)
+        ties = sum(1 for a, b in secondary if a == b)
+        mean_difference = float(np.mean(f1_a) - np.mean(f1_b))
+
+        described = {
+            "primary_metric": "f1",
+            "mean_f1_a": float(np.mean(f1_a)),
+            "mean_f1_b": float(np.mean(f1_b)),
+            "mean_f1_difference": mean_difference,
+            # Descriptive only, no p-value. Precision answers "when the system
+            # cites a line, is it evidence?", which must not depend on how
+            # broadly the annotation marked -- and it does not, where F1 does.
+            "mean_precision_a": float(np.mean(precision_a)),
+            "mean_precision_b": float(np.mean(precision_b)),
+            "mean_precision_difference": float(np.mean(precision_a) - np.mean(precision_b)),
+            # Reported because precision is blind to a model that cites one
+            # correct line and stops.
+            "mean_lines_cited_a": float(np.mean([a for a, _ in citations])),
+            "mean_lines_cited_b": float(np.mean([b for _, b in citations])),
+        }
 
         if a_wins + b_wins == 0:
             return {
@@ -123,28 +173,27 @@ class StatisticalTests:
                 "a_better": 0,
                 "b_better": 0,
                 "ties": ties,
-                "mean_f1_a": float(np.mean(first_scores)),
-                "mean_f1_b": float(np.mean(second_scores)),
+                **described,
                 "mean_f1_difference": 0.0,
+                "p_value": 1.0,
+                "significant_at_005": False,
                 "verdict": "Identical evidence-line F1 on every case",
             }
 
-        result = stats.wilcoxon(first_scores, second_scores)
+        result = stats.wilcoxon(f1_a, f1_b)
         p_value = float(result.pvalue)
         return {
             "scorable_pairs": len(paired),
             "a_better": a_wins,
             "b_better": b_wins,
             "ties": ties,
-            "mean_f1_a": float(np.mean(first_scores)),
-            "mean_f1_b": float(np.mean(second_scores)),
-            "mean_f1_difference": mean_difference,
+            **described,
             "statistic": float(result.statistic),
             "p_value": p_value,
             "significant_at_005": bool(p_value < 0.05),
             "verdict": (
-                f"{'First' if mean_difference > 0 else 'Second'} model better on evidence lines "
-                f"in {max(a_wins, b_wins)} of {len(paired)} cases"
+                f"{'First' if mean_difference > 0 else 'Second'} model better on evidence-line "
+                f"F1 in {max(a_wins, b_wins)} of {len(paired)} cases"
                 if p_value < 0.05
                 else "No significant difference in evidence-line F1"
             ),

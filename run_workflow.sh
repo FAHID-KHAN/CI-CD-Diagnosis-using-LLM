@@ -35,6 +35,8 @@ SCORER="${SCORER:-}"
 ACTION="${ACTION:-}"
 EXPERIMENT="${EXPERIMENT:-}"
 MODELS="${MODELS:-}"
+APPROVED_BY="${APPROVED_BY:-}"
+ALLOW_DIRTY=false
 DRY_RUN=false
 # Partition sizes. Empty means make_split.py's own defaults apply; the runner
 # must be able to express them or a re-split through the wrapper would silently
@@ -90,6 +92,8 @@ Options:
   ACTION=word             Sub-action for defects (add|audit|commit) and freeze (create|verify)
   EXPERIMENT=dir          Experiment directory for the score command
   MODELS=a,b              develop only: run a subset of conditions while iterating
+  APPROVED_BY=name        freeze create only: who approved the freeze
+  --allow-dirty           freeze create only: forgive an uncommitted worktree
   VERIFIER=id             Second-reviewer identifier for verify commands
 
 Examples:
@@ -123,6 +127,8 @@ while [[ $# -gt 0 ]]; do
         ACTION=*) ACTION="${1#ACTION=}"; shift ;;
         EXPERIMENT=*) EXPERIMENT="${1#EXPERIMENT=}"; shift ;;
         MODELS=*) MODELS="${1#MODELS=}"; shift ;;
+        APPROVED_BY=*) APPROVED_BY="${1#APPROVED_BY=}"; shift ;;
+        --allow-dirty) ALLOW_DIRTY=true; shift ;;
         VERIFIER=*) VERIFIER="${1#VERIFIER=}"; shift ;;
         --help|-h) usage; exit 0 ;;
         -*) echo "Unknown option: $1"; usage; exit 1 ;;
@@ -268,6 +274,10 @@ cmd_score() {
 cmd_freeze() {
     local args=("${ACTION:-verify}" --study-config "${STUDY_CONFIG}")
     [[ -n "${STUDY_DIR}" ]] && args+=(--study-dir "${STUDY_DIR}")
+    # Creating a freeze record requires an approver, and without this the
+    # workflow could never satisfy its own gate.
+    [[ -n "${APPROVED_BY}" ]] && args+=(--approved-by "${APPROVED_BY}")
+    [[ "${ALLOW_DIRTY}" == true ]] && args+=(--allow-dirty)
     "${PYTHON}" automated_scripts/freeze_package.py "${args[@]}"
 }
 

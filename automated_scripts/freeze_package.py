@@ -101,7 +101,13 @@ def collect_conditions(models: List[str], hosted_tokens: int, local_tokens: int,
     return conditions
 
 
-def pilot_state(root: Path) -> Dict[str, object]:
+def _pilot_case_count(root: Path) -> int:
+    """How many cases the pilot partition holds, from the split manifest."""
+    manifest = _read_json(root / "split_manifest.json") or {}
+    return len((manifest.get("partitions") or {}).get("pilot", []))
+
+
+def pilot_state(root: Path, models: List[str], expected_cases: int) -> Dict[str, object]:
     """Has a pilot run happened, and over how many cases?
 
     The pilot rehearses the procedure on a partition the plan permits
@@ -112,11 +118,31 @@ def pilot_state(root: Path) -> Dict[str, object]:
     runs = sorted(p for p in experiments.glob("pilot_*") if p.is_dir()) if experiments.is_dir() else []
     latest = runs[-1] if runs else None
     results = sorted(latest.glob("results_*.json")) if latest else []
+    # Any two files used to satisfy this, so a run with one model and the
+    # baseline counted as a rehearsal. The pilot only rehearses the held-out
+    # procedure if it exercised the same three conditions over every case.
+    present = [p.name for p in results]
+    expected_conditions = {"results_baseline_rules.json"} | {
+        f"results_{spec.replace('/', '_').replace(':', '_')}.json" for spec in models
+    }
+    missing = sorted(expected_conditions - set(present))
+    counts = {}
+    for path in results:
+        try:
+            rows = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            rows = []
+        counts[path.name] = len(rows) if isinstance(rows, list) else 0
+    short = sorted(name for name, n in counts.items() if n < expected_cases)
     return {
         "runs": [p.name for p in runs],
         "latest": latest.name if latest else None,
-        "conditions_present": [p.name for p in results],
-        "complete": bool(latest) and len(results) >= 2,
+        "conditions_present": present,
+        "conditions_missing": missing,
+        "cases_per_condition": counts,
+        "expected_cases": expected_cases,
+        "conditions_short_of_full_cohort": short,
+        "complete": bool(latest) and not missing and not short,
     }
 
 
@@ -174,7 +200,7 @@ def collect(config: dict, root: Path) -> Dict[str, object]:
             "methodology": _read_json(root / "methodology_approval.json"),
             "freeze_approved_by": None,
         },
-        "pilot": pilot_state(root),
+        "pilot": pilot_state(root, DEFAULT_MODELS, _pilot_case_count(root)),
         "baseline": {"ruleset_sha256": ruleset_sha256(DEFAULT_RULES), "rule_count": len(DEFAULT_RULES)},
         "dataset": {
             "study_id": config["study_id"],
@@ -317,7 +343,16 @@ def main() -> int:
         print(f"ERROR: No freeze record at {record_path}. Create one before the held-out run.")
         return 1
     frozen = json.loads(record_path.read_text(encoding="utf-8"))
-    changes = compare({key: frozen[key] for key in ("source", "artifact", "baseline", "dataset")}, current)
+    # "conditions" is compared too. Recording the local model's identity and
+    # then excluding it from verification would let a re-pulled or re-quantised
+    # Ollama model pass unnoticed, which is the single change most likely to
+    # happen between freezing and the held-out run and least likely to be
+    # noticed by eye.
+    verified_sections = ("source", "artifact", "baseline", "dataset", "conditions")
+    changes = compare({key: frozen[key] for key in verified_sections if key in frozen}, current)
+    missing_sections = [key for key in verified_sections if key not in frozen]
+    if missing_sections:
+        changes.append(f"the freeze record predates verification of: {', '.join(missing_sections)}; re-create it")
 
     print()
     print("=" * 70)

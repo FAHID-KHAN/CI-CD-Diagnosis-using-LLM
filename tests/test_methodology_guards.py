@@ -1645,13 +1645,17 @@ def test_a_one_category_cohort_still_yields_a_testable_difference():
     from src.evaluation.evaluation import StatisticalTests
 
     truth = [[10, 11, 12, 13] for _ in range(8)]
+    # The tested statistic is precision, so the two conditions have to differ in
+    # what they cite, not only in how much: the weaker one mixes in lines that
+    # are not evidence.
     better = [_prediction(f"c{i}", [10, 11, 12], truth[i]) for i in range(8)]
-    worse = [_prediction(f"c{i}", [10], truth[i]) for i in range(8)]
+    worse = [_prediction(f"c{i}", [10, 97, 98], truth[i]) for i in range(8)]
 
     mcnemar = StatisticalTests.mcnemar_test(better, worse)
     assert mcnemar["n01"] == 0 and mcnemar["n10"] == 0, "category accuracy cannot discriminate here"
 
     evidence = StatisticalTests.paired_evidence_line_test(better, worse)
+    assert evidence["primary_metric"] == "f1"
     assert evidence["a_better"] == 8 and evidence["b_better"] == 0
     assert evidence["significant_at_005"] is True
     assert evidence["mean_f1_difference"] > 0
@@ -1850,3 +1854,43 @@ def test_identical_predictions_give_a_p_value_of_one():
     a = [_correct_wrong(f"c{i}", True) for i in range(8)]
     b = [_correct_wrong(f"c{i}", True) for i in range(8)]
     assert StatisticalTests.paired_permutation_test(a, b, n_permutations=200)["p_value"] == 1.0
+
+
+def test_precision_is_blind_to_a_model_that_cites_a_correct_subset():
+    """Why precision is reported descriptively and F1 carries the test.
+
+    A model citing one correct line scores the same precision as one citing
+    three, so precision alone would call them equal. The citation count is
+    reported beside it for the same reason.
+    """
+    from src.evaluation.evaluation import StatisticalTests
+
+    truth = [[10, 11, 12, 13] for _ in range(6)]
+    thorough = [_prediction(f"c{i}", [10, 11, 12], truth[i]) for i in range(6)]
+    minimal = [_prediction(f"c{i}", [10], truth[i]) for i in range(6)]
+
+    result = StatisticalTests.paired_evidence_line_test(thorough, minimal)
+    assert result["mean_precision_a"] == result["mean_precision_b"], "precision cannot separate them"
+    assert result["mean_f1_a"] > result["mean_f1_b"], "the tested metric can"
+    assert result["mean_lines_cited_a"] > result["mean_lines_cited_b"]
+    assert result["significant_at_005"] is True
+
+
+def test_only_one_p_value_is_reported():
+    """Two tests over the same pairs would be multiple testing without a correction.
+
+    Precision is reported as a descriptive capability figure and deliberately
+    carries no p-value; the absolute claim it supports is not a claim about a
+    difference between conditions.
+    """
+    from src.evaluation.evaluation import StatisticalTests
+
+    truth = [[10, 11, 12, 13] for _ in range(8)]
+    thorough = [_prediction(f"c{i}", [10, 11, 12], truth[i]) for i in range(8)]
+    minimal = [_prediction(f"c{i}", [10, 97], truth[i]) for i in range(8)]
+
+    result = StatisticalTests.paired_evidence_line_test(thorough, minimal)
+    assert result["primary_metric"] == "f1"
+    p_keys = [k for k in result if "p_value" in k]
+    assert p_keys == ["p_value"], f"exactly one p-value expected, found {p_keys}"
+    assert "mean_precision_a" in result, "precision is still reported"
