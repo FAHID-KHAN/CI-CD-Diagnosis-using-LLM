@@ -764,9 +764,7 @@ async def main():
                         continue
                     against_baseline[label] = {
                         "mcnemar": StatisticalTests.mcnemar_test(model_preds, aligned_baseline),
-                        "evidence_line_test": StatisticalTests.paired_evidence_line_test(
-                            model_preds, aligned_baseline
-                        ),
+                        "evidence_line_test": StatisticalTests.paired_evidence_line_test(model_preds, aligned_baseline),
                     }
                 stat_report["versus_baseline"] = against_baseline
                 stat_report["baseline_ruleset_sha256"] = next(
