@@ -1775,9 +1775,7 @@ def test_scoping_keeps_the_failing_jobs_evidence():
     evidence = [failed_line]
 
     unscoped = LogFilter.trace_filtering(archive, evidence, max_lines=50)
-    scoped = LogFilter.trace_filtering(
-        archive, evidence, max_lines=50, failing_job="tests (ubuntu, 3.14, extra-deps)"
-    )
+    scoped = LogFilter.trace_filtering(archive, evidence, max_lines=50, failing_job="tests (ubuntu, 3.14, extra-deps)")
     assert unscoped["after_line_cap"]["recall"] == 0.0
     assert scoped["after_line_cap"]["recall"] == 1.0
 
@@ -1954,7 +1952,7 @@ def test_the_final_run_is_scoped_to_the_held_out_partition():
 
 
 def test_pilot_runs_the_partition_and_pilot_smoke_runs_the_smoke_cohort():
-    """"pilot" ran the five-case smoke cohort, leaving the partition unreachable."""
+    """ "pilot" ran the five-case smoke cohort, leaving the partition unreachable."""
     source = _workflow_source()
     assert "    pilot)          cmd_pilot_partition ;;" in source
     assert "    pilot-smoke)    cmd_pilot_smoke ;;" in source
@@ -1995,15 +1993,29 @@ def test_an_inapplicable_grounding_score_is_not_averaged_as_zero():
     from src.evaluation.report_comparison import compute_model_metrics
 
     baseline_rows = [
-        {"status": "success", "log_id": f"c{i}", "error_type": "test_failure", "confidence_score": 0.0,
-         "execution_time_ms": 1.0, "grounding_score": None, "failure_lines": [1]}
+        {
+            "status": "success",
+            "log_id": f"c{i}",
+            "error_type": "test_failure",
+            "confidence_score": 0.0,
+            "execution_time_ms": 1.0,
+            "grounding_score": None,
+            "failure_lines": [1],
+        }
         for i in range(3)
     ]
     assert compute_model_metrics(baseline_rows)["mean_grounding_score"] is None
 
     model_rows = [
-        {"status": "success", "log_id": f"c{i}", "error_type": "test_failure", "confidence_score": 0.9,
-         "execution_time_ms": 1.0, "grounding_score": score, "failure_lines": [1]}
+        {
+            "status": "success",
+            "log_id": f"c{i}",
+            "error_type": "test_failure",
+            "confidence_score": 0.9,
+            "execution_time_ms": 1.0,
+            "grounding_score": score,
+            "failure_lines": [1],
+        }
         for i, score in enumerate((1.0, 0.5))
     ]
     assert compute_model_metrics(model_rows)["mean_grounding_score"] == 0.75
@@ -2013,10 +2025,24 @@ def test_a_mixed_run_averages_only_the_applicable_scores():
     from src.evaluation.report_comparison import compute_model_metrics
 
     rows = [
-        {"status": "success", "log_id": "a", "error_type": "test_failure", "confidence_score": 0.9,
-         "execution_time_ms": 1.0, "grounding_score": 1.0, "failure_lines": [1]},
-        {"status": "success", "log_id": "b", "error_type": "test_failure", "confidence_score": 0.9,
-         "execution_time_ms": 1.0, "grounding_score": None, "failure_lines": [1]},
+        {
+            "status": "success",
+            "log_id": "a",
+            "error_type": "test_failure",
+            "confidence_score": 0.9,
+            "execution_time_ms": 1.0,
+            "grounding_score": 1.0,
+            "failure_lines": [1],
+        },
+        {
+            "status": "success",
+            "log_id": "b",
+            "error_type": "test_failure",
+            "confidence_score": 0.9,
+            "execution_time_ms": 1.0,
+            "grounding_score": None,
+            "failure_lines": [1],
+        },
     ]
     assert compute_model_metrics(rows)["mean_grounding_score"] == 1.0
 

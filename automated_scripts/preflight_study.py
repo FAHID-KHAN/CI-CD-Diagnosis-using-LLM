@@ -119,9 +119,7 @@ def main() -> int:
         # Sample inside the protocol's frame, so the preflight log is drawn from
         # the same population collection will use.
         window = config.get("sampling_window_days") or {}
-        created = (
-            created_window(int(window["minimum_age"]), int(window["maximum_age"])) if window else None
-        )
+        created = created_window(int(window["minimum_age"]), int(window["maximum_age"])) if window else None
         logs = GitHubActionsCollector(token).collect_logs_from_repo(owner, repo, num_logs=1, created=created)
     except Exception as exc:
         print(f"ERROR: Live GitHub check failed: {exc}")
