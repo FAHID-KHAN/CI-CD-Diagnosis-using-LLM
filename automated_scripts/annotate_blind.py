@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +30,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from automated_scripts.study_utils import atomic_write_json, load_study_config, study_directory
+from src.api.log_sections import failing_job_section as shared_failing_job_section
 from src.evaluation.ground_truth_audit import (
     EVIDENCE_METHODS,
     MIN_ROOT_CAUSE_CHARS,
@@ -186,25 +186,12 @@ def failing_job_section(log: dict) -> tuple:
 
     Returns ``(start_line, end_line, name)`` 1-based and inclusive, or
     ``(None, None, None)`` when the failing job cannot be located.
+
+    Delegates to ``src.api.log_sections`` so the reviewer is pointed at the same
+    section the filter shows the model. A private copy here had drifted: it took
+    the first same-named section even when that job passed.
     """
-    job = (log.get("failing_job") or "").strip()
-    if not job:
-        return (None, None, None)
-    lines = log.get("log_content", "").split("\n")
-    marks = [(i, m.group(1)) for i, line in enumerate(lines, 1) if (m := re.match(r"^=== (.+) ===$", line))]
-    # GitHub sanitises the section filename, so it is not the job name verbatim:
-    # the job "Build&Test: node-24, ubuntu-latest" is stored as
-    # "4_Build&Test node-24, ubuntu-latest.txt" with the colon dropped. Comparing
-    # the names literally found nothing for every vite case, the banner stayed
-    # silent, and six annotations were recorded against the wrong matrix entry.
-    wanted = re.sub(r"[^a-z0-9]", "", job.lower())
-    for position, (start, name) in enumerate(marks):
-        # Section names carry an index prefix and a .txt suffix: "18_tests (...).txt".
-        stem = name[:-4] if name.endswith(".txt") else name
-        if re.sub(r"[^a-z0-9]", "", stem.lower()).endswith(wanted):
-            end = marks[position + 1][0] - 1 if position + 1 < len(marks) else len(lines)
-            return (start, end, name)
-    return (None, None, None)
+    return shared_failing_job_section(log.get("log_content", ""), log.get("failing_job") or "")
 
 
 def present_case(root: Path, log: dict, index: int, total: int, mode: str) -> None:
