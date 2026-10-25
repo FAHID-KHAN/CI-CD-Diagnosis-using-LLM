@@ -52,6 +52,14 @@ def failing_job_section(log_content: str, failing_job: str) -> Tuple[Optional[in
     Callers must treat that as "scope unknown" and fall back to the whole log
     rather than guessing a section, because scoping to the wrong job would hide
     the failure completely.
+
+    One run can hold several sections with the same job name: scrapy runs its
+    test matrix once per OS under identical job names, so
+    ``tests (3.15.0-rc.1, no-reactor)`` appears three times in
+    ``gh_scrapy_scrapy_36011686318`` and the first of them passed. Taking the
+    first match showed the model a green job. When names repeat, the first
+    section that reports ``##[error]`` is the failing one; with no such marker
+    the first match is kept, as before.
     """
     job = (failing_job or "").strip()
     if not job:
@@ -61,12 +69,19 @@ def failing_job_section(log_content: str, failing_job: str) -> Tuple[Optional[in
     wanted = _comparable(job)
     if not wanted:
         return (None, None, None)
+    matches = []
     for position, (start, name) in enumerate(marks):
         stem = name[:-4] if name.endswith(".txt") else name
         if _comparable(stem).endswith(wanted):
             end = marks[position + 1][0] - 1 if position + 1 < len(marks) else len(lines)
-            return (start, end, name)
-    return (None, None, None)
+            matches.append((start, end, name))
+    if not matches:
+        return (None, None, None)
+    if len(matches) > 1:
+        for start, end, name in matches:
+            if any("##[error]" in line for line in lines[start - 1 : end]):
+                return (start, end, name)
+    return matches[0]
 
 
 def scope_to_failing_job(log_content: str, failing_job: str) -> Tuple[str, int, Optional[str]]:
