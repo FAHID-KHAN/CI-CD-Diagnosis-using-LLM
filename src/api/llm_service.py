@@ -247,7 +247,8 @@ class LLMDiagnoser:
             if not json_match:
                 raise
             payload = json.loads(json_match.group())
-        return LLMDiagnosis.model_validate(payload).model_dump(mode="json")
+        diagnosis: Dict[str, Any] = LLMDiagnosis.model_validate(payload).model_dump(mode="json")
+        return diagnosis
 
     def _set_usage(self, response: Any, prompt_tokens: int, completion_tokens: int, *, local: bool) -> None:
         """Store reproducibility and cost metadata for the most recent request."""
