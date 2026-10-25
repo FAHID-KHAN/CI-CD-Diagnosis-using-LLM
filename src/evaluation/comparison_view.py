@@ -668,6 +668,56 @@ def _statistics(report: ExperimentReport) -> str:
     return f"<table><tbody>{body}</tbody></table>"
 
 
+def _rubric_table(report: ExperimentReport, slots: Dict[str, int]) -> str:
+    """Blind 0/1/2 scores for root causes and suggested fixes."""
+    summary = report.rubric_report()
+    if summary is None:
+        return (
+            '<p class="meta">Not scored yet. Run <code>./run_workflow.sh score</code> to score root '
+            "causes and suggested fixes blind to the model.</p>"
+        )
+    rows = []
+    for label, entry in summary["conditions"].items():
+        cells = ""
+        for name in ("root_cause_score", "fix_score"):
+            described = entry[name]
+            mean = f"{described['mean']:.2f}" if described["mean"] is not None else "—"
+            counts = described["counts"]
+            cells += (
+                f'<td class="num">{esc(mean)}</td><td class="num">{esc(pct(described["share_correct"], 0))}</td>'
+                f'<td class="num">{counts["2"]} / {counts["1"]} / {counts["0"]}</td>'
+            )
+        slot = slots.get(label, 0)
+        rows.append(
+            f'<tr><td><span class="swatch" style="background:var(--series-{slot})"></span> {esc(label)}</td>'
+            f'<td class="num">{entry["scored"]}</td>{cells}</tr>'
+        )
+    notes = []
+    for comparison in summary["comparisons"]:
+        for name, title in (("root_cause_score", "root cause"), ("fix_score", "fix")):
+            test = comparison[name]
+            verdict = (
+                f"Holm-adjusted p = {test['p_value_holm']:.4f}" if "p_value_holm" in test else test.get("verdict", "")
+            )
+            notes.append(
+                f"{comparison['model_a']} vs {comparison['model_b']}, {title}: "
+                f"{test['a_better']} / {test['b_better']} / {test['ties']} of {test['paired_cases']} — {verdict}"
+            )
+    if summary["not_compared"]:
+        notes.append(
+            "Not tested, because every response was empty and auto-scored 0: " + ", ".join(summary["not_compared"])
+        )
+    note_html = "".join(f'<p class="meta">{esc(note)}</p>' for note in notes)
+    return (
+        '<div class="scroll"><table><thead><tr><th>Condition</th><th class="num">Scored</th>'
+        '<th class="num">Cause mean</th><th class="num">Cause = 2</th><th class="num">Cause 2/1/0</th>'
+        '<th class="num">Fix mean</th><th class="num">Fix = 2</th><th class="num">Fix 2/1/0</th>'
+        f'</tr></thead><tbody>{"".join(rows)}</tbody></table></div>{note_html}'
+        f'<p class="meta">Scored by {esc(summary["scorer"])}, blind to the model and in shuffled order. '
+        "Wins are first / second / tied.</p>"
+    )
+
+
 def _details(report: ExperimentReport, slots: Dict[str, int]) -> str:
     blocks = []
     for log_id in report.log_order:
@@ -790,6 +840,7 @@ def render_html(reports: List[ExperimentReport], title: str = "CI/CD diagnosis �
             f'<div class="card"><h3>Per-category effectiveness</h3>'
             f"{_category_table(report, slot_of)}</div>"
             f'<div class="card"><h3>Evidence-line accuracy</h3>{_evidence_table(report, slot_of)}</div>'
+            f'<div class="card"><h3>Root cause and fix scores</h3>{_rubric_table(report, slot_of)}</div>'
             f'<div class="card"><h3>Confusion matrices</h3>{_confusion(report, types)}</div>'
             f'<div class="card"><h3>Statistical tests</h3>{_statistics(report)}</div>'
             f'<div class="card"><h3>Diagnosis detail</h3>{_details(report, slot_of)}</div>'

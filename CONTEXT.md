@@ -22,7 +22,7 @@ Supervisors: Jussi Rasku, Md Mahade Hasan. Thesis seminar: 9 November 2026.
 
 | | |
 | --- | --- |
-| Code | Complete. 186 tests, lint and type checks pass. |
+| Code | Complete. 202 tests, lint and type checks pass. |
 | Study data | `thesis_scrapy_vite_2026` is the study cohort: 131 raw, 81 eligible after re-triage, re-split (11 / 11 / 31 plus 28 reserve), **22 of 53 annotated** -- development 11/11, pilot 11/11, held_out 0/31. Two paired runs complete, each with three conditions. Superseded: `thesis_pair_2026` (27 annotations, all void -- django and gradle both dropped) and `thesis_gradle_scrapy_2026` (78 eligible, never annotated). |
 | Repositories | scrapy/scrapy and vitejs/vite, decided 18 October 2026 |
 | Active config | `configs/thesis_scrapy_vite_2026.yaml` — scrapy/scrapy (100) and vitejs/vite (60), sampling window 14–45 days. Cohort collected 18 October; do not edit, its SHA-256 is in the manifests. |
@@ -1525,9 +1525,22 @@ annotation:
   because replacing gradle means collecting a new one; the rules matter for the
   next collection, not this one.
 
-One commitment made to supervisors that is not implemented: **root-cause /
-suggested-fix quality scoring**. The **rule-based baseline** was wired in on
-21 October 2026 and runs as a third condition. A third,
+**Root-cause / suggested-fix quality scoring** was implemented on 25 October
+2026. `./run_workflow.sh score SCORER=<id> EXPERIMENT=<dir>` scores every
+response's root cause (the supervisors' 0/1/2 wording, verbatim) and suggested
+fix (a parallel 0/1/2 rubric judged against the verified cause and the
+documented repair), blind to the model and shuffled. Responses with neither a
+cause nor a fix -- the baseline's -- are scored 0 automatically and never shown,
+because they would identify their condition. `src/evaluation/rubric_scores.py`
+reports per-condition distributions with bootstrap intervals, a paired Wilcoxon
+per field with Holm correction across the two, a repair-anchored versus
+judgement-only split, and the evidence-support breakdown (R8); the comparison
+report and HTML view include it. `RESCORE=20` re-scores a sample for the
+intra-rater check, reported with linear-weighted kappa, which is also usable for
+the annotation test-retest. These are secondary metrics: plan §8 still says root
+cause and fix are "reported qualitatively" and needs updating to match. The
+**rule-based baseline** was wired in on 21 October 2026 and runs as a third
+condition. A third,
 **independent second review**, has been declined -- see the single-annotator
 section above for the substitute plan, which has to be disclosed to supervisors
 rather than left as a silent omission.
