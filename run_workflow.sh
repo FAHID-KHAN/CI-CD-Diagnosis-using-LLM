@@ -32,6 +32,7 @@ STUDY_DIR=""
 ANNOTATOR="${ANNOTATOR:-}"
 VERIFIER="${VERIFIER:-}"
 SCORER="${SCORER:-}"
+RESCORE="${RESCORE:-}"
 ACTION="${ACTION:-}"
 EXPERIMENT="${EXPERIMENT:-}"
 MODELS="${MODELS:-}"
@@ -65,7 +66,7 @@ Commands:
   verify-smoke      Independent second review of the smoke cohort  (needs VERIFIER=)
   audit             Ground-truth audit against the evidence requirements
   defects           Record or audit controlled defects          (add|audit|commit)
-  score             Blind 0/1/2 scoring of model root causes    (needs SCORER=)
+  score             Blind 0/1/2 scoring of root causes and fixes (needs SCORER=)
   freeze            Create or verify the freeze record          (create|verify)
   develop           Paired run on the development partition      (MODELS= optional)
   pilot             Paired run on the pilot partition           (MODELS= optional)
@@ -89,6 +90,7 @@ Options:
   --study-dir PATH        Inspect or operate on another study directory
   ANNOTATOR=id            Reviewer identifier for annotate commands
   SCORER=id               Scorer identifier for the score command
+  RESCORE=N               score only: blindly re-score N responses for the intra-rater check
   ACTION=word             Sub-action for defects (add|audit|commit) and freeze (create|verify)
   EXPERIMENT=dir          Experiment directory for the score command
   MODELS=a,b              develop only: run a subset of conditions while iterating
@@ -124,6 +126,7 @@ while [[ $# -gt 0 ]]; do
         --study-dir) STUDY_DIR="$2"; shift 2 ;;
         ANNOTATOR=*) ANNOTATOR="${1#ANNOTATOR=}"; shift ;;
         SCORER=*) SCORER="${1#SCORER=}"; shift ;;
+        RESCORE=*) RESCORE="${1#RESCORE=}"; shift ;;
         ACTION=*) ACTION="${1#ACTION=}"; shift ;;
         EXPERIMENT=*) EXPERIMENT="${1#EXPERIMENT=}"; shift ;;
         MODELS=*) MODELS="${1#MODELS=}"; shift ;;
@@ -268,7 +271,9 @@ print(study_directory(config))")"
 cmd_score() {
     require_id SCORER "${SCORER}"
     [[ -n "${EXPERIMENT}" ]] || fail "EXPERIMENT=<dir> is required, e.g. EXPERIMENT=${SMOKE_ROOT}/experiments/pilot_002"
-    "${PYTHON}" automated_scripts/score_root_cause.py --experiment "${EXPERIMENT}" --scorer "${SCORER}"
+    local args=(--experiment "${EXPERIMENT}" --scorer "${SCORER}")
+    [[ -n "${RESCORE}" ]] && args+=(--rescore "${RESCORE}")
+    "${PYTHON}" automated_scripts/score_root_cause.py "${args[@]}"
 }
 
 cmd_freeze() {
