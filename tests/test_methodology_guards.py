@@ -691,6 +691,203 @@ def test_the_rubric_covers_exactly_the_three_defined_scores():
     assert set(EVIDENCE_SUPPORT) == {"y", "n", "p", "x"}
 
 
+def test_an_empty_response_is_auto_scored_and_never_shown():
+    """Only the baseline answers with no cause and no fix; showing it would unmask it."""
+    from automated_scripts.score_root_cause import collect_responses
+
+    report = _FakeReport(["openai/hosted", "baseline/rules"], ["log0", "log1"])
+    real = report.outcome
+
+    def outcome(model, log_id):
+        result = real(model, log_id)
+        if model == "baseline/rules":
+            result.root_cause, result.suggested_fix = "", "   "
+        return result
+
+    report.outcome = outcome
+    queue, automatic = collect_responses(report, seed=1)
+    assert {item["model"] for item in queue} == {"openai/hosted"}
+    assert [item["response_id"] for item in automatic] == ["log0::baseline/rules", "log1::baseline/rules"]
+
+
+def test_auto_scored_entries_are_zero_and_flagged():
+    from automated_scripts.score_root_cause import add_automatic, new_payload
+
+    payload = new_payload(".", "s1", 1)
+    automatic = [{"response_id": "a::m", "log_id": "a", "model": "m"}]
+    assert add_automatic(payload, automatic) == 1
+    # Resuming must not add the same response twice.
+    assert add_automatic(payload, automatic) == 0
+    (entry,) = payload["scores"]
+    assert entry["root_cause_score"] == 0 and entry["fix_score"] == 0 and entry["auto"] is True
+
+
+def test_a_blank_fix_scores_zero_without_asking():
+    from automated_scripts import score_root_cause
+
+    item = {"response_cause": "a cause", "response_fix": "", "response_lines": []}
+    answers = iter(["2", ""])
+    with mock.patch("builtins.input", lambda prompt="": next(answers)):
+        judged = score_root_cause.ask_scores(item)
+    assert judged == {"root_cause_score": 2, "fix_score": 0, "evidence_support": "no lines cited", "note": ""}
+
+
+def test_the_scorer_sees_the_documented_repair_but_not_the_model():
+    from automated_scripts.score_root_cause import build_queue, present
+
+    report = _FakeReport(["openai/hosted"], ["log0"])
+    report.ground_truth["log0"]["fixing_reference"] = "https://github.com/org/one/pull/7"
+    report.outcome = lambda model, log_id: _FakeOutcome("an import fails")
+    (item,) = build_queue(report, seed=1)
+    assert item["verified_repair"] == "https://github.com/org/one/pull/7"
+    with mock.patch("builtins.print") as printed:
+        present(item, 1, 1)
+    shown = " ".join(str(call.args[0]) for call in printed.call_args_list if call.args)
+    assert "pull/7" in shown
+    assert "openai" not in shown and "hosted" not in shown
+
+
+def test_the_root_cause_rubric_is_the_supervisors_wording_verbatim():
+    """SUPERVISOR_CONDITIONS.md section 3 is the approved definition; the form must not drift from it."""
+    from src.evaluation.rubric_scores import ROOT_CAUSE_RUBRIC
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(root, "docs", "thesis", "SUPERVISOR_CONDITIONS.md"), encoding="utf-8") as handle:
+        conditions = handle.read()
+    for score, (_, rule) in ROOT_CAUSE_RUBRIC.items():
+        assert f"| {score} | {rule} |" in conditions
+
+
+def test_a_version_one_scores_file_is_not_resumed():
+    """Version 1 recorded no fix score; resuming it would leave fixes silently unscored."""
+    from automated_scripts.score_root_cause import check_existing, new_payload
+
+    payload = new_payload(".", "s1", 5)
+    assert check_existing(payload, "s1", 5) == ""
+    assert "schema version 1" in check_existing({**payload, "schema_version": 1}, "s1", 5)
+    assert "different scorer" in check_existing(payload, "s2", 5)
+    assert "seed" in check_existing(payload, "s1", 6)
+
+
+def test_the_rescore_sample_excludes_auto_scores_and_reorders():
+    from automated_scripts.score_root_cause import build_queue, rescore_sample
+
+    report = _FakeReport(["a/one", "b/two"], [f"log{i}" for i in range(10)])
+    queue = build_queue(report, seed=3)
+    scored = {item["response_id"] for item in queue}
+    sample = rescore_sample(queue, scored, set(), 8, seed=3)
+    assert len(sample) == 8
+    assert [item["response_id"] for item in sample] != [item["response_id"] for item in queue[:8]]
+    # Already re-scored responses are not offered again, and the sample is stable.
+    again = rescore_sample(queue, scored, {sample[0]["response_id"]}, 8, seed=3)
+    assert [item["response_id"] for item in again] == [item["response_id"] for item in sample[1:]]
+    # Responses never scored by hand (auto-scored ones) are never in the sample.
+    assert rescore_sample(queue, set(), set(), 8, seed=3) == []
+
+
+# ── Rubric analysis: what the scores say ──────────────────────────────────
+
+
+def test_weighted_kappa_matches_a_hand_computed_value():
+    from src.evaluation.rubric_scores import weighted_kappa
+
+    first, second = [0, 1, 2, 2], [0, 2, 2, 1]
+    assert weighted_kappa(first, second) == pytest.approx(3 / 7)
+    assert weighted_kappa(first, second, weights="none") == pytest.approx(0.2)
+    assert weighted_kappa([0, 1, 2], [0, 1, 2]) == pytest.approx(1.0)
+    # Perfect agreement on a constant leaves chance agreement perfect too.
+    assert weighted_kappa([2, 2], [2, 2]) is None
+    assert weighted_kappa([], []) is None
+
+
+def test_weighted_kappa_penalises_a_two_step_disagreement_more():
+    from src.evaluation.rubric_scores import weighted_kappa
+
+    near = weighted_kappa([0, 1, 2, 0, 1, 2], [0, 1, 2, 1, 1, 2])
+    far = weighted_kappa([0, 1, 2, 0, 1, 2], [0, 1, 2, 2, 1, 2])
+    assert near > far
+
+
+def test_holm_adjustment():
+    from src.evaluation.rubric_scores import holm_adjust
+
+    assert holm_adjust([0.01, 0.04]) == pytest.approx([0.02, 0.04])
+    assert holm_adjust([0.04, 0.01]) == pytest.approx([0.04, 0.02])
+    assert holm_adjust([0.6, 0.7]) == pytest.approx([1.0, 1.0])
+
+
+def _score(log_id, model, cause, fix, auto=False):
+    return {
+        "response_id": f"{log_id}::{model}",
+        "log_id": log_id,
+        "model": model,
+        "root_cause_score": cause,
+        "fix_score": fix,
+        "evidence_support": "not assessed" if auto else "supports",
+        "auto": auto,
+    }
+
+
+def _scores_payload(entries, rescores=()):
+    return {"schema_version": 2, "scorer": "s1", "seed": 1, "scores": list(entries), "rescores": list(rescores)}
+
+
+def test_summary_compares_models_and_leaves_an_all_auto_condition_out():
+    from src.evaluation.rubric_scores import summarize_scores
+
+    entries = []
+    for i in range(8):
+        entries.append(_score(f"log{i}", "a/hosted", 2, 2 if i < 6 else 1))
+        entries.append(_score(f"log{i}", "b/local", 0 if i < 7 else 2, 1))
+        entries.append(_score(f"log{i}", "baseline/rules", 0, 0, auto=True))
+    truth = {f"log{i}": {"evidence_method": "historical_fix" if i < 5 else "expert_review"} for i in range(8)}
+    summary = summarize_scores(_scores_payload(entries), truth)
+
+    hosted = summary["conditions"]["a/hosted"]
+    assert hosted["root_cause_score"]["counts"] == {"0": 0, "1": 0, "2": 8}
+    assert hosted["fix_score"]["share_correct"] == pytest.approx(0.75)
+    assert hosted["by_ground_truth_anchor"]["repair_anchored"]["root_cause_score"]["n"] == 5
+    assert hosted["by_ground_truth_anchor"]["judgement_only"]["root_cause_score"]["n"] == 3
+    assert summary["conditions"]["baseline/rules"]["auto_scored"] == 8
+
+    assert summary["not_compared"] == ["baseline/rules"]
+    (comparison,) = summary["comparisons"]
+    assert (comparison["model_a"], comparison["model_b"]) == ("a/hosted", "b/local")
+    cause = comparison["root_cause_score"]
+    assert (cause["a_better"], cause["b_better"], cause["ties"]) == (7, 0, 1)
+    assert cause["p_value_holm"] >= cause["p_value"]
+    assert cause["significant_at_005"] is True
+
+
+def test_identical_scores_give_no_p_value():
+    from src.evaluation.rubric_scores import paired_score_test
+
+    result = paired_score_test({"a": 1, "b": 2}, {"a": 1, "b": 2})
+    assert result["p_value"] is None and result["verdict"] == "Identical scores on every case"
+    assert paired_score_test({"a": 1}, {"a": 2})["verdict"] == "Too few paired cases for a test"
+
+
+def test_intra_rater_agreement_compares_rescores_with_first_scores():
+    from src.evaluation.rubric_scores import intra_rater_agreement
+
+    first = [_score("x", "m", 0, 0), _score("y", "m", 1, 2), _score("z", "m", 2, 2), _score("w", "m", 0, 0, auto=True)]
+    again = [_score("x", "m", 0, 1), _score("y", "m", 1, 2), _score("z", "m", 2, 2), _score("w", "m", 2, 2)]
+    result = intra_rater_agreement(_scores_payload(first, again))
+    # The auto-scored response was never judged, so it cannot be re-judged.
+    assert result["rescored"] == 3
+    assert result["root_cause_score"]["raw_agreement"] == pytest.approx(1.0)
+    assert result["fix_score"]["raw_agreement"] == pytest.approx(2 / 3)
+
+
+def test_a_malformed_scores_file_is_rejected():
+    from src.evaluation.rubric_scores import validate_payload
+
+    assert validate_payload(_scores_payload([_score("x", "m", 2, 1)])) == []
+    assert "schema_version" in validate_payload({"schema_version": 1, "scores": []})[0]
+    assert "fix_score=3" in validate_payload(_scores_payload([_score("x", "m", 2, 3)]))[0]
+    assert "twice" in validate_payload(_scores_payload([_score("x", "m", 2, 1), _score("x", "m", 1, 1)]))[0]
+
+
 # ── Preprocessing recall: was the evidence even shown to the model? ───────
 
 

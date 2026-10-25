@@ -312,3 +312,43 @@ def test_display_helpers_round_the_way_the_terminal_table_does():
     assert fmt_usd(0) == "$0.00"
     assert fmt_usd(0.038115) == "$0.0381"
     assert type_label("build_configuration") == "build configuration"
+
+
+def _rubric_entry(log_id, model, cause, fix):
+    return {
+        "response_id": f"{log_id}::{model}",
+        "log_id": log_id,
+        "model": model,
+        "root_cause_score": cause,
+        "fix_score": fix,
+        "evidence_support": "supports",
+        "auto": False,
+    }
+
+
+def test_rubric_scores_are_loaded_reported_and_rendered(experiment):
+    scores = [_rubric_entry(log_id, "openai/model-a", 2, 1) for log_id in "abc"]
+    scores += [_rubric_entry(log_id, "local/model-b", 1, 0) for log_id in "abc"]
+    with open(os.path.join(experiment, "root_cause_scores.json"), "w") as handle:
+        json.dump({"schema_version": 2, "scorer": "s1", "seed": 1, "scores": scores, "rescores": []}, handle)
+
+    report = load_experiment(experiment)
+    rubric = report.to_dict()["rubric_scores"]
+    assert rubric["conditions"]["openai/model-a"]["root_cause_score"]["mean"] == pytest.approx(2.0)
+    assert rubric["conditions"]["local/model-b"]["fix_score"]["counts"]["0"] == 3
+    assert len(rubric["comparisons"]) == 1
+    page = render_html([report])
+    assert "Root cause and fix scores" in page and "Scored by s1" in page
+
+
+def test_an_unscored_run_is_not_an_issue_but_a_bad_scores_file_is(experiment):
+    report = load_experiment(experiment)
+    assert report.rubric_report() is None
+    assert not any("root_cause_scores" in issue for issue in report.issues)
+    assert "Not scored yet" in render_html([report])
+
+    with open(os.path.join(experiment, "root_cause_scores.json"), "w") as handle:
+        json.dump({"schema_version": 1, "scores": []}, handle)
+    report = load_experiment(experiment)
+    assert report.rubric_report() is None
+    assert any("root_cause_scores.json is invalid" in issue for issue in report.issues)

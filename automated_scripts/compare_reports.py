@@ -186,6 +186,25 @@ def print_report(report):
         print()
         print(f"  McNemar: chi2 = {mcnemar.get('chi2')}, p = {mcnemar.get('p_value')} — {mcnemar.get('verdict')}")
 
+    rubric = report.rubric_report()
+    if rubric:
+        print()
+        print(f"  Root-cause and fix scores (blind, scorer {rubric['scorer']}): mean · share scoring 2")
+        for label, entry in rubric["conditions"].items():
+            cause, fix = entry["root_cause_score"], entry["fix_score"]
+            print(
+                f"    {label:<32} cause {cause['mean']:.2f} · {pct(cause['share_correct'], 0):>4}"
+                f"   fix {fix['mean']:.2f} · {pct(fix['share_correct'], 0):>4}   n={entry['scored']}"
+            )
+        for comparison in rubric["comparisons"]:
+            for name in ("root_cause_score", "fix_score"):
+                test = comparison[name]
+                p_value = test.get("p_value_holm")
+                print(
+                    f"    {comparison['model_a']} vs {comparison['model_b']} {name}: "
+                    + (f"Holm p = {p_value:.4f}" if p_value is not None else test.get("verdict", ""))
+                )
+
     if report.issues:
         print()
         print("  DATA NOTES")

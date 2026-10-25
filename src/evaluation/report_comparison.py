@@ -27,6 +27,7 @@ from src.evaluation.category_metrics import (
     macro_f1,
 )
 from src.evaluation.ground_truth_audit import GroundTruthAudit, audit_ground_truth_file
+from src.evaluation.rubric_scores import SCORES_FILE, load_scores, summarize_scores
 
 # Re-exported so existing callers keep importing the vocabulary and the tolerant
 # readers from this module.
@@ -163,6 +164,7 @@ class ExperimentReport:
     log_info: Dict[str, dict] = field(default_factory=dict)
     ground_truth: Dict[str, dict] = field(default_factory=dict)
     statistical_tests: Optional[dict] = None
+    rubric_scores: Optional[dict] = None
     run_context: Dict[str, object] = field(default_factory=dict)
     issues: List[str] = field(default_factory=list)
 
@@ -196,6 +198,12 @@ class ExperimentReport:
             per_case.append(case)
         return {"per_case": per_case, **aggregate_evidence_lines(per_case)}
 
+    def rubric_report(self) -> Optional[dict]:
+        """Root-cause and suggested-fix rubric results, when the run has been scored."""
+        if self.rubric_scores is None:
+            return None
+        return summarize_scores(self.rubric_scores, self.ground_truth, self.model_labels)
+
     def to_dict(self) -> dict:
         return {
             "path": self.path,
@@ -220,6 +228,7 @@ class ExperimentReport:
                 for model, per_log in self.outcomes.items()
             },
             "statistical_tests": self.statistical_tests,
+            "rubric_scores": self.rubric_report(),
             "agreement": [pair.to_dict() for pair in pairwise_agreements(self)],
             "confusion": {model: confusion_rows(self, model) for model in self.model_labels},
             "category_metrics": {model: self.category_report(model) for model in self.model_labels},
@@ -399,6 +408,13 @@ def load_experiment(experiment_path: str, ground_truth_path: Optional[str] = Non
         )
     elif len(report.model_labels) >= 2:
         report.issues.append("statistical_tests.json is missing, so this run has no paired significance test.")
+
+    # Not scoring yet is a normal state, so a missing file is not an issue.
+    rubric, rubric_status = load_scores(experiment_path)
+    if rubric_status == "ok":
+        report.rubric_scores = rubric
+    elif rubric_status in ("unreadable", "invalid"):
+        report.issues.append(f"{SCORES_FILE} is {rubric_status}; root-cause and fix scores were not reported.")
 
     return report
 
