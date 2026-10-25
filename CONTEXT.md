@@ -28,7 +28,7 @@ Supervisors: Jussi Rasku, Md Mahade Hasan. Thesis seminar: 9 November 2026.
 | Active config | `configs/thesis_scrapy_vite_2026.yaml` — scrapy/scrapy (100) and vitejs/vite (60), sampling window 14–45 days. Cohort collected 18 October; do not edit, its SHA-256 is in the manifests. |
 | Evaluation plan | Sent and approved. `EVALUATION_PLAN.md` holds the drafted §3.1, §3.2 and amended §10; reconcile it with whatever was actually sent. |
 | Progress report | `docs/thesis/PROGRESS_REPORT_2026-10-21.md` — standalone, written 21 October |
-| Next | Annotate the 31 held-out cases (10–13 h). Then verify the approval record, freeze, run `final` once. |
+| Next | Annotate the 31 held-out cases (10–13 h); pre-flight passed 25 October. Then verify the approval record, freeze, run `final` once. |
 | Approval | **Granted 21 October 2026.** Single-annotator ground truth accepted. Recorded in `data/studies/thesis_scrapy_vite_2026/methodology_approval.json` — verify its fields against the actual message. |
 | Blocked on | Annotation. The held-out run is gated on a completed pilot and a freeze record, not on approval. |
 
@@ -1545,6 +1545,36 @@ The `lint` job had been failing on `main` for several pushes. Four files,
 formatting plus one return type. Housekeeping, but a red CI badge on a thesis
 about CI is worth avoiding.
 
+## Pre-flight before held-out annotation, 25 October 2026
+
+Checked before the annotation session that produces the confirmatory ground
+truth. Everything below was verified, not assumed.
+
+```
+sync            e63dbef on HEAD and origin/main, worktree clean
+tests           203 pass, flake8 and mypy clean
+queue           59 pending; the first 31 are all held_out, case 32 is reserve
+ground truth    22 annotations, parses, no duplicate ids, all carry evidence lines
+codebook        zero TO WRITE markers
+approval        methodology_approval.json present
+freeze record   none, so nothing blocks creating the real one
+```
+
+**PR #1's fix verified on the case it was written for.**
+`gh_scrapy_scrapy_36011686318` now resolves to `4_tests (3.15.0-rc.1,
+no-reactor).txt` at lines 37,325-38,202, which contains `##[error]`. Before the
+fix it resolved to line 19,546 -- a section whose job had passed.
+
+**What the 31 held-out cases look like:** median 4,915 lines, minimum 650,
+maximum 48,703; 14 scrapy and 17 vite; **five exceed 40,000 lines**.
+
+**Three cautions carried into the session.** Stop at 31, because case 32 is
+reserve and the header counts against all 81. Take line numbers from the
+numbered review log rather than GitHub's per-job view, using the banner's range.
+And `gh_scrapy_scrapy_35070733531` shows **no banner** -- its recorded
+`failing_job`, `benchmark-walltime`, has no section in the archive -- so it
+needs the rule below before its annotation can be trusted.
+
 ## Open decisions
 
 Six, listed in `docs/thesis/EVALUATION_PLAN.md` §10. The ones that block
@@ -1569,6 +1599,16 @@ annotation:
 - **Whether `freeze create` should gain a `--check` mode** that reports the
   blocking problems without writing a record. Its absence caused a false freeze
   record to be created on 25 October simply by inspecting the gates.
+- **What to do with the two cases whose `failing_job` has no log in the
+  archive.** `gh_vitejs_vite_36550600858` (pilot, annotated against the macOS
+  section with line 1 as its evidence) and `gh_scrapy_scrapy_35070733531`
+  (held-out, not yet annotated). Under codebook §0.2 the evidence belongs to the
+  job in `failing_job`; where that job has no log, the case cannot be annotated
+  under the stated rule. Excluding them is an evidence-availability exclusion the
+  methodology permits, but it would mean re-triage, and the split manifest still
+  references the current 81 cases -- re-splitting is no longer free now that 22
+  cases are annotated. Handling them as unscorable at analysis time avoids that
+  entirely and is the likelier answer.
 - **Whether to run the rubric scoring before the seminar.** The capability
   exists and closes the commitment; running it on held-out is 31 cases times two
   conditions times two judgements of human time, on top of 31 annotations. It
