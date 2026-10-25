@@ -22,7 +22,7 @@ Supervisors: Jussi Rasku, Md Mahade Hasan. Thesis seminar: 9 November 2026.
 
 | | |
 | --- | --- |
-| Code | Complete. 202 tests, lint and type checks pass. |
+| Code | Complete. 203 tests, lint and type checks pass. Rubric scoring implemented (PR #2); `failing_job_section` corrected for repeated job names (PR #1). |
 | Study data | `thesis_scrapy_vite_2026` is the study cohort: 131 raw, 81 eligible after re-triage, re-split (11 / 11 / 31 plus 28 reserve), **22 of 53 annotated** -- development 11/11, pilot 11/11, held_out 0/31. Two paired runs complete, each with three conditions. Superseded: `thesis_pair_2026` (27 annotations, all void -- django and gradle both dropped) and `thesis_gradle_scrapy_2026` (78 eligible, never annotated). |
 | Repositories | scrapy/scrapy and vitejs/vite, decided 18 October 2026 |
 | Active config | `configs/thesis_scrapy_vite_2026.yaml` — scrapy/scrapy (100) and vitejs/vite (60), sampling window 14–45 days. Cohort collected 18 October; do not edit, its SHA-256 is in the manifests. |
@@ -1496,6 +1496,55 @@ has no dry-run.** Checking whether the gates pass requires performing the act
 they gate. A `--check` mode that reports the blocking problems without writing
 would make the gates inspectable without creating anything.
 
+## Three pull requests, merged 25 October 2026
+
+Opened and merged from a separate working session, all three now on
+`origin/main`. Tests went from 186 to 203.
+
+### #1 -- Scope to the section that failed when a job name repeats
+
+**A correctness bug in `failing_job_section`, and the most important of the
+three.** It returned the *first* section whose name matched `failing_job`.
+scrapy runs its test matrix once per operating system under identical job
+names -- `tests (3.15.0-rc.1, no-reactor)` appears three times in
+`gh_scrapy_scrapy_36011686318` -- and **the first of them had passed.** The
+filter was therefore showing the model a job that succeeded, and the annotation
+banner was pointing a reviewer at it.
+
+Fixed by taking the first matching section that contains `##[error]`, falling
+back to the first match where no such marker exists. Found while preparing the
+held-out annotation.
+
+**Scope of the damage, measured 25 October:** two of the 81 cases have a job
+name matching more than one section, and in only **one** does the fix change
+which section is used -- `gh_scrapy_scrapy_36011686318`, which is in **held-out
+and not yet annotated**. The pilot case with three matches happens to have its
+failing section first, so nothing changes for it. **The development and pilot
+results are unaffected and need no re-run.**
+
+### #2 -- Score root causes and suggested fixes on the 0/1/2 rubric
+
+Implements the last outstanding supervisor commitment, `SUPERVISOR_CONDITIONS.md`
+§3, with the supervisors' wording verbatim. Adds
+`src/evaluation/rubric_scores.py`, extends `automated_scripts/score_root_cause.py`,
+and adds `RESCORE=N` for the intra-rater re-scoring that substitutes for a
+second reviewer. Read-only over `root_cause_scores.json`; it never writes ground
+truth.
+
+**The capability now exists, which closes the commitment. Running it is a
+separate, scheduling decision.** Scoring is interactive and human: every root
+cause and every suggested fix, per case, per condition. For held-out that is 31
+cases times two conditions times two judgements, on top of 31 annotations. It
+gates nothing -- `final` does not require it -- and the module itself states
+these are secondary metrics, with category and evidence-line accuracy remaining
+primary. With fifteen days left, held-out annotation comes first.
+
+### #3 -- Fix lint: apply black and a mypy return type
+
+The `lint` job had been failing on `main` for several pushes. Four files,
+formatting plus one return type. Housekeeping, but a red CI badge on a thesis
+about CI is worth avoiding.
+
 ## Open decisions
 
 Six, listed in `docs/thesis/EVALUATION_PLAN.md` §10. The ones that block
@@ -1505,10 +1554,13 @@ annotation:
   The codebook now records that six of the eight have no development example and
   78 of 81 cases fail at a test step, so this is close to being settled by the
   data rather than by choice.
-- Score root-cause correctness with a rubric, or narrow the primary research
-  question to categories and evidence lines.
+- ~~Score root-cause correctness with a rubric, or narrow the primary research
+  question.~~ Settled 25 October 2026: the rubric is implemented (PR #2) and the
+  primary question names categories and evidence lines, with rubric scores
+  secondary. **`EVALUATION_PLAN.md` §8 still says root cause and fix are
+  "reported qualitatively" and contradicts this.**
 - ~~What happens to gradle.~~ Settled 18 October 2026: replaced by
-  vitejs/vite. The next step is a new config and a fresh collection pass.
+  vitejs/vite, collected and split.
 - **The research questions.** Revised wording is drafted in
   `EVALUATION_PLAN.md` §3 with the originals beside it in §3.2. **The author is
   writing the plan that will actually be sent.** SRQ2 changed meaning and needs
@@ -1517,6 +1569,11 @@ annotation:
 - **Whether `freeze create` should gain a `--check` mode** that reports the
   blocking problems without writing a record. Its absence caused a false freeze
   record to be created on 25 October simply by inspecting the gates.
+- **Whether to run the rubric scoring before the seminar.** The capability
+  exists and closes the commitment; running it on held-out is 31 cases times two
+  conditions times two judgements of human time, on top of 31 annotations. It
+  gates nothing. With fifteen days left this is a scheduling call, not a
+  methodological one.
 - **Whether to re-triage `thesis_gradle_scrapy_2026`.** The two rules it would
   apply now exist -- `is_umbrella_job` in `src/evaluation/job_scope.py`, and
   `BOT_MARKERS` entries for the five maintenance workflows that slipped through.
