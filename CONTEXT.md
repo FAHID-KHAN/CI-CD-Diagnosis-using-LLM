@@ -28,7 +28,7 @@ Supervisors: Jussi Rasku, Md Mahade Hasan. Thesis seminar: 9 November 2026.
 | Active config | `configs/thesis_scrapy_vite_2026.yaml` — scrapy/scrapy (100) and vitejs/vite (60), sampling window 14–45 days. Cohort collected 18 October; do not edit, its SHA-256 is in the manifests. |
 | Evaluation plan | Sent and approved. `EVALUATION_PLAN.md` holds the drafted §3.1, §3.2 and amended §10; reconcile it with whatever was actually sent. |
 | Progress report | `docs/thesis/PROGRESS_REPORT_2026-10-21.md` — standalone, written 21 October |
-| Next | Annotate the 31 held-out cases, then freeze and run `final` once |
+| Next | Annotate the 31 held-out cases (10–13 h). Then verify the approval record, freeze, run `final` once. |
 | Approval | **Granted 21 October 2026.** Single-annotator ground truth accepted. Recorded in `data/studies/thesis_scrapy_vite_2026/methodology_approval.json` — verify its fields against the actual message. |
 | Blocked on | Annotation. The held-out run is gated on a completed pilot and a freeze record, not on approval. |
 
@@ -1447,6 +1447,55 @@ answering two questions at once.
 
 No re-annotation is needed, so the 22 existing annotations stand.
 
+## Where things stand, 25 October 2026
+
+Fifteen days to the seminar. **The tool is finished; the remaining work is
+annotation and writing.**
+
+```
+development  11/11  annotated, paired run complete
+pilot        11/11  annotated, paired run complete
+held_out      0/31  nothing annotated
+```
+
+Committed through `75ae285`, worktree clean, 186 tests pass. Every blocker that
+is not annotation is cleared: supervisors approved on 21 October, the codebook
+is written, the baseline runs as a third condition, the evidence-metric contract
+is settled, the freeze gates work, and the statistical tests are correct.
+
+The pilot earned its place: it caught a crash in the baseline wiring, a
+permutation test reporting `p = 0.0` where the correct value was 0.25, and the
+annotation-breadth confound -- all on a partition the plan permits inspecting,
+before the run that happens once.
+
+**The honest arithmetic.** Thirty-one logs remain, and the pilot cases carried 20
+to 56 evidence lines each, so 10 to 13 hours of reading is realistic. Then the
+held-out run, then the document. Nothing in the tooling changes that number.
+
+**A decision to make deliberately rather than discover.** If held-out annotation
+is not finished by about 1 November, cut the held-out set to a size that can be
+completed. A smaller confirmatory set honestly reported is worth more than an
+incomplete one, and choosing it in advance is defensible where running out of
+time is not.
+
+### A freeze record was created by accident and removed
+
+On 25 October an agent ran `freeze ACTION=create APPROVED_BY="test"` intending
+only to exercise the gate, and the command created a real record: approver
+`"test"`, frozen against the 22-annotation ground truth. It was backed up and
+deleted, and `freeze verify` now correctly reports that no record exists.
+
+It could not have corrupted a result silently -- `final` verifies against the
+record, and the ground-truth checksum changes the moment held-out annotation
+begins, so verification would have refused. But it was a false provenance
+artifact, and `create` refuses when a record already exists, so it would have
+blocked the real freeze.
+
+Recorded because the lesson is in the tool, not the mistake: **`freeze create`
+has no dry-run.** Checking whether the gates pass requires performing the act
+they gate. A `--check` mode that reports the blocking problems without writing
+would make the gates inspectable without creating anything.
+
 ## Open decisions
 
 Six, listed in `docs/thesis/EVALUATION_PLAN.md` §10. The ones that block
@@ -1465,6 +1514,9 @@ annotation:
   writing the plan that will actually be sent.** SRQ2 changed meaning and needs
   supervisor agreement; the Primary's reference to a baseline is satisfied now
   that the baseline runs as a condition.
+- **Whether `freeze create` should gain a `--check` mode** that reports the
+  blocking problems without writing a record. Its absence caused a false freeze
+  record to be created on 25 October simply by inspecting the gates.
 - **Whether to re-triage `thesis_gradle_scrapy_2026`.** The two rules it would
   apply now exist -- `is_umbrella_job` in `src/evaluation/job_scope.py`, and
   `BOT_MARKERS` entries for the five maintenance workflows that slipped through.
