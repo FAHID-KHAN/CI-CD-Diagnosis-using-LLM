@@ -1529,6 +1529,30 @@ def test_a_matrix_entry_is_not_confused_with_a_similarly_named_one():
     assert failing_job_section(log)[0] == 22
 
 
+def test_a_repeated_job_name_resolves_to_the_section_that_failed():
+    """scrapy runs one matrix per OS under identical job names.
+
+    In gh_scrapy_scrapy_36011686318 the first of three
+    ``tests (3.15.0-rc.1, no-reactor)`` sections passed; taking it showed the
+    model and the annotator a green job.
+    """
+    from automated_scripts.annotate_blind import failing_job_section
+    from src.api.log_sections import scope_to_failing_job
+
+    content = "\n".join(
+        ["=== 22_tests (3.15.0-rc.1, no-reactor).txt ==="]
+        + ["4253 passed"] * 10
+        + ["=== 27_tests (3.15.0-rc.1, no-reactor).txt ==="]
+        + ["4253 passed"] * 10
+        + ["=== 4_tests (3.15.0-rc.1, no-reactor).txt ==="]
+        + ["1 failed", "##[error]Process completed with exit code 1."]
+    )
+    log = {"log_content": content, "failing_job": "tests (3.15.0-rc.1, no-reactor)"}
+    assert failing_job_section(log) == (23, 25, "4_tests (3.15.0-rc.1, no-reactor).txt")
+    scoped, offset, name = scope_to_failing_job(content, log["failing_job"])
+    assert offset == 22 and name.startswith("4_") and "##[error]" in scoped
+
+
 # ── Filtering: the model must be shown the job that failed ────────────────
 
 
