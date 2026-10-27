@@ -1689,6 +1689,58 @@ are "reported qualitatively" and contradicts the implemented rubric, and the
 abstract's preliminary wording currently rests on pilot numbers that the
 held-out run will replace.
 
+## Where things stand, 28 October 2026
+
+Twelve days to the seminar. Read from the files on disk, not from memory of
+what was run.
+
+```
+sync            2e1a5a1 on HEAD and origin/main, worktree clean
+tests           204 pass, flake8 and mypy clean
+collection      131 raw logs, complete_with_warnings
+triage          81 eligible, 50 excluded with reasons
+ground truth    24 of 53 -- development 11/11, pilot 11/11, held_out 2/31
+held-out sep.   no overlap, 0 exploratory cases
+experiments     1 development, 2 pilot (one baseline-only), 0 held-out
+freeze record   none
+```
+
+**Held-out annotation has started.** Two of 31 done on 27 October --
+`gh_scrapy_scrapy_37191082350` and `gh_scrapy_scrapy_37194899133` -- leaving 29.
+Both audit findings are `disclosed` rather than `blocking`, because the
+methodology approval record carries the approvers' names and date, so the
+single-annotator design no longer holds up the pipeline.
+
+**The missing-section case is third in the queue.** The next three pending are
+`gh_scrapy_scrapy_35047356100`, `gh_scrapy_scrapy_35055489971`, then
+`gh_scrapy_scrapy_35070733531` -- the one whose recorded `failing_job`,
+`benchmark-walltime`, has no section in the archive. The rule for it is wanted
+within the next two cases, not eventually. It is the first item on the 27
+October review list for that reason, and the open decision below sets out the
+likeliest answer: handle both affected cases as unscorable at analysis time
+rather than excluding them, which would force a re-triage and a re-split that
+24 completed annotations now make expensive.
+
+**The McNemar test was corrected** to the exact binomial version -- see the
+section above. No pilot verdict changed, and the thesis needs no edit because
+§6.2 and §7.2 already state the exact test and its values.
+
+**What is done, end to end:** protocol frozen, cohort collected, triaged and
+split four ways; the filter scoped to the failing job and its token budget
+enforced as an invariant; evidence line numbers pinned to the archive's frame;
+the leakage fault that had put one fault in the cohort nineteen times fixed;
+the codebook written with no gaps; the rule-based baseline wired as a third
+condition; blind rubric scoring for root cause and fix implemented with an
+intra-rater resample; statistics reduced to one tested hypothesis per question
+with the permutation and McNemar faults fixed; the twelve workflow defects from
+the two reviews closed; and the single-annotator design approved with its four
+substitutes recorded.
+
+**What is not done:** 29 annotations, the ground-truth audit sign-off, the
+freeze record and its approver, the one held-out run, blind scoring, the
+20-response rescore, and the Results, Discussion and Conclusion chapters. The
+chapters are the part nothing in this repository can produce.
+
 ## Open decisions
 
 Six, listed in `docs/thesis/EVALUATION_PLAN.md` §10. The ones that block
