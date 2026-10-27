@@ -184,7 +184,11 @@ def print_report(report):
     if stats:
         mcnemar = stats.get("mcnemar", {})
         print()
-        print(f"  McNemar: chi2 = {mcnemar.get('chi2')}, p = {mcnemar.get('p_value')} — {mcnemar.get('verdict')}")
+        method = mcnemar.get("method", "normal approximation with continuity correction (superseded)")
+        print(
+            f"  McNemar ({method}): n01 = {mcnemar.get('n01')}, n10 = {mcnemar.get('n10')}, "
+            f"p = {mcnemar.get('p_value')} — {mcnemar.get('verdict')}"
+        )
 
     rubric = report.rubric_report()
     if rubric:

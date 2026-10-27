@@ -1359,10 +1359,13 @@ single-category by accident of sampling, not because the cohort is
 single-category. Corrected in the development-run section above.
 
 Significance: hosted beats local by 27 percentage points on category but with
-only three discordant pairs that is **not significant** (McNemar p = 0.248). On
+only three discordant pairs that is **not significant** (McNemar p = 0.25). On
 evidence lines it is -- hosted ahead in 10 of 11, p = 0.002. Against the
-baseline, hosted is significant on category (p = 0.013) and local is not
-(p = 0.074).
+baseline, hosted is significant on category (p = 0.0078) and local is not
+(p = 0.0625). Those three are the exact binomial values, recomputed from the
+discordant counts the run stored; the file itself records the chi-square
+approximation's 0.248, 0.013 and 0.074 -- see the section on the exact test
+below.
 
 **The local model's latency is a finding for SRQ1:** 495 s per case against the
 hosted model's 12.9 s, with one case at 1,125 s. Roughly 40x, on identical
@@ -1370,7 +1373,9 @@ input.
 
 ### The permutation test reported p = 0.0, and was wrong
 
-It printed `p = 0.0` where McNemar reported 0.248 on identical data. The
+It printed `p = 0.0` where McNemar reported 0.248 on identical data -- the
+chi-square approximation's figure, which the exact test has since replaced with
+0.25. The
 observed statistic was computed as `a.mean() - b.mean()`, which lands one unit
 in the last place above the same quantity computed from the difference array --
 in floating point `9/11 - 6/11 > 3/11` -- so **no permutation ever counted as
@@ -1381,7 +1386,7 @@ Fixed by computing the observed statistic from the array the permutations are
 drawn from, with a tolerance on the comparison. The p-value is now the unbiased
 estimator `(extreme + 1) / (n + 1)`: resampling cannot demonstrate p = 0, since
 the floor is set by how many permutations were drawn. Recomputed on the pilot
-data the two tests agree -- McNemar 0.248, permutation 0.257.
+data the two tests agree -- McNemar 0.25, permutation 0.257.
 
 A reported p = 0.0 would not have survived examination. Three tests now cover
 it, one of which asserts the two tests agree on the same data.
@@ -1574,6 +1579,63 @@ numbered review log rather than GitHub's per-job view, using the banner's range.
 And `gh_scrapy_scrapy_35070733531` shows **no banner** -- its recorded
 `failing_job`, `benchmark-walltime`, has no section in the archive -- so it
 needs the rule below before its annotation can be trusted.
+
+## McNemar is the exact binomial test, 28 October 2026
+
+The code computed the chi-square approximation with a continuity correction.
+The thesis §6.2 says the exact binomial version, and §7.2 reports its exact
+values. Those were two different tests, and the gap was not cosmetic: at eight
+discordant pairs all favouring one condition the approximation returns
+p = 0.013 where the exact probability is 2 x 0.5^8 = 0.0078, a factor of 1.7.
+The approximation needs discordant pairs in quantity -- the usual threshold is
+25 -- and this study has single digits of them, because the held-out partition
+is 31 cases. It was never the right test here.
+
+`StatisticalTests.mcnemar_test` in `src/evaluation/evaluation.py` now takes the
+discordant pairs as the whole sample: under the null each falls either way with
+probability one half, so the two-sided p is twice the smaller tail of a
+symmetric binomial, capped at 1. **The chi-square statistic is no longer
+reported at all.** A reader who recomputed a p-value from a
+continuity-corrected chi2 would not arrive at the exact p printed beside it,
+and a published statistic nobody can reproduce a result from is worse than
+none. In its place the result carries `n_discordant` and a `method` string, and
+the three places that print McNemar -- `benchmark_models.py`,
+`compare_reports.py`, `comparison_view.py` -- show the discordant counts and
+the method instead.
+
+**No verdict changed.** Recomputed from the discordant counts stored by the
+pilot run:
+
+| Comparison | n01, n10 | Stored (approximate) | Exact | Significant |
+| --- | --- | --- | --- | --- |
+| hosted vs local | 0, 3 | 0.248 | **0.25** | no, both ways |
+| hosted vs baseline | 0, 8 | 0.013 | **0.0078** | yes, both ways |
+| local vs baseline | 0, 5 | 0.074 | **0.0625** | no, both ways |
+
+**The pilot's `statistical_tests.json` still holds the approximate values, and
+should.** Stored study files are immutable records of the run that produced
+them, and there is no offline path that recomputes statistical tests from the
+per-log results -- `benchmark_models.py` writes them while it runs. This costs
+nothing, because `n01` and `n10` are the sufficient statistic: the exact p
+follows from them by definition, which is how the table above was produced. The
+held-out run will compute exact values natively, so the only artefact carrying
+approximate numbers is a partition that is not part of the confirmatory
+analysis. The HTML view labels them "normal approximation with continuity
+correction (superseded)" rather than relabelling them as exact.
+
+**The thesis needs no edit.** §6.2 already names the exact test and §7.2
+already quotes exact values. The one thing to carry across is that the pilot
+table's numbers are derived from the stored discordant counts rather than read
+off the stored p-values.
+
+`tests/test_methodology_guards.py` gained
+`test_mcnemar_is_the_exact_binomial_test_not_the_chi_square_approximation`,
+which pins 0.0078 for 8-0, 0.25 for 3-0, 1.0 for an even split, asserts the
+result is not the chi-square value, and asserts no `chi2` key is published.
+204 tests pass. The pre-existing test that checks the permutation test agrees
+with McNemar needed **no tolerance change** -- it bounds the permutation
+p-value in (0.1, 0.5), which holds for 0.248 and 0.25 alike; only its docstring
+quoted the superseded figure.
 
 ## Remaining work on the thesis document, review of 27 October 2026
 

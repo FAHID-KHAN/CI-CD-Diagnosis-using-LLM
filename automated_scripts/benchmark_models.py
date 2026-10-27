@@ -779,8 +779,8 @@ async def main():
 
             print("\n  STATISTICAL TESTS")
             print("  " + "-" * 60)
-            print(f"  McNemar's test ({a_label} vs {b_label}):")
-            print(f"    chi2 = {mcnemar['chi2']}, p = {mcnemar['p_value']}")
+            print(f"  McNemar's test ({a_label} vs {b_label}), {mcnemar['method']}:")
+            print(f"    n01 = {mcnemar['n01']}, n10 = {mcnemar['n10']}, p = {mcnemar['p_value']}")
             print(f"    → {mcnemar['verdict']}")
             print(f"  Bootstrap 95% CI ({a_label}): [{ci_a['ci_lower']:.1%}, {ci_a['ci_upper']:.1%}]")
             print(f"  Bootstrap 95% CI ({b_label}): [{ci_b['ci_lower']:.1%}, {ci_b['ci_upper']:.1%}]")

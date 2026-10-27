@@ -2066,12 +2066,14 @@ def _correct_wrong(log_id: str, correct: bool):
 
 
 def test_the_permutation_test_matches_mcnemar_on_the_same_data():
-    """The pilot reported p = 0.0 against McNemar's 0.248 on identical data.
+    """The pilot reported p = 0.0 against McNemar's 0.25 on identical data.
 
     Taking the observed statistic as a.mean() - b.mean() put it one ULP above
     the identical quantity computed from the difference array, so no permutation
     ever counted as extreme. Three discordant pairs all favouring one model
-    gives p = 0.25, not zero.
+    gives p = 0.25, not zero. (McNemar read 0.248 when this was found, under the
+    chi-square approximation it has since stopped using; the exact binomial
+    value for 3-0 is 0.25, which is what the bound below is checked against.)
     """
     from src.evaluation.evaluation import StatisticalTests
 
@@ -2082,6 +2084,43 @@ def test_the_permutation_test_matches_mcnemar_on_the_same_data():
     result = StatisticalTests.paired_permutation_test(a, b, n_permutations=2000)
     assert result["p_value"] > 0.1, result
     assert result["p_value"] < 0.5, result
+
+
+def test_mcnemar_is_the_exact_binomial_test_not_the_chi_square_approximation():
+    """The thesis reports exact p-values, so the code must compute exact ones.
+
+    Section 6.2 states the exact binomial version and Section 7.2 reports
+    p = 0.008 for the comparison with eight discordant pairs all favouring the
+    hosted model. The exact probability there is 2 x 0.5**8 = 0.0078; the
+    chi-square approximation with a continuity correction gives 0.013, a factor
+    of 1.7 away. At this study's number of discordant pairs -- single digits,
+    against the approximation's usual requirement of 25 -- the approximation is
+    not fit to produce a published number.
+
+    No chi-square statistic is reported either: a reader recomputing p from a
+    corrected chi2 would not land on the exact p printed beside it.
+    """
+    from src.evaluation.evaluation import StatisticalTests
+
+    # 8 discordant pairs, every one favouring a; five further pairs both right.
+    a = [_correct_wrong(f"c{i}", True) for i in range(13)]
+    b = [_correct_wrong(f"c{i}", False) for i in range(8)] + [_correct_wrong(f"c{i}", True) for i in range(8, 13)]
+    result = StatisticalTests.mcnemar_test(a, b)
+    assert result["n_discordant"] == 8 and result["n10"] == 8
+    assert result["p_value"] == round(2 * 0.5**8, 6), result
+    assert abs(float(result["p_value"]) - 0.013) > 0.004, "this is the chi-square value, not the exact one"
+    assert result["method"] == "exact binomial (two-sided)"
+    assert "chi2" not in result, "a statistic the reported p cannot be recomputed from must not be published"
+
+    # Three discordant pairs one way: 0.25 exactly, where the approximation said 0.248.
+    a = [_correct_wrong(f"c{i}", True) for i in range(11)]
+    b = [_correct_wrong(f"c{i}", False) for i in range(3)] + [_correct_wrong(f"c{i}", True) for i in range(3, 11)]
+    assert StatisticalTests.mcnemar_test(a, b)["p_value"] == 0.25
+
+    # Evenly split discordance is the null itself; doubling the tail must cap at 1.
+    a = [_correct_wrong(f"c{i}", True) for i in range(4)] + [_correct_wrong(f"c{i}", False) for i in range(4, 8)]
+    b = [_correct_wrong(f"c{i}", False) for i in range(4)] + [_correct_wrong(f"c{i}", True) for i in range(4, 8)]
+    assert StatisticalTests.mcnemar_test(a, b)["p_value"] == 1.0
 
 
 def test_a_permutation_p_value_is_never_exactly_zero():

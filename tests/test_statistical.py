@@ -36,7 +36,7 @@ def test_mcnemar():
     preds_b = _make_preds([True, False, True, True, True])
     result = StatisticalTests.mcnemar_test(preds_a, preds_b)
     assert "p_value" in result
-    assert "chi2" in result
+    assert "n_discordant" in result
     assert "verdict" in result
     assert 0 <= result["p_value"] <= 1
     json.dumps(result)

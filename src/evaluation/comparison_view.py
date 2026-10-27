@@ -612,7 +612,14 @@ def _statistics(report: ExperimentReport) -> str:
     evidence = stats.get("evidence_line_test", {})
     rows = [
         ("Paired logs", stats.get("n_common_logs"), ""),
-        ("McNemar χ²", mcnemar.get("chi2"), f"p = {mcnemar.get('p_value')}"),
+        (
+            "McNemar p-value",
+            mcnemar.get("p_value"),
+            # Runs stored before the exact test was adopted carry a chi2 and an
+            # approximate p. Name the method they were computed under rather
+            # than relabelling them as exact.
+            str(mcnemar.get("method", "normal approximation with continuity correction (superseded)")),
+        ),
         (
             "McNemar discordant pairs",
             f"n01 = {mcnemar.get('n01')}, n10 = {mcnemar.get('n10')}",

@@ -23,11 +23,37 @@ class PredictionResult:
 class StatisticalTests:
     """Paired significance and uncertainty estimates for two model conditions."""
 
+    METHOD_EXACT_BINOMIAL = "exact binomial (two-sided)"
+
     @staticmethod
     def mcnemar_test(
         predictions_a: List[PredictionResult],
         predictions_b: List[PredictionResult],
     ) -> Dict[str, object]:
+        """Exact binomial McNemar over paired category correctness.
+
+        The exact version, not the chi-square approximation with a continuity
+        correction. The approximation needs the discordant pairs to be plentiful
+        -- the usual rule of thumb is at least 25 -- and this study cannot supply
+        them: the pilot produced 8 discordant pairs on one comparison and 3 on
+        another, and the held-out partition is 31 cases. At 8 pairs all
+        favouring one condition the corrected statistic returns p = 0.013 while
+        the exact probability is 2 x 0.5**8 = 0.0078; at 3 pairs it returns
+        0.248 against an exact 0.25. The error is not conservative in a
+        predictable direction, so reporting it would put the thesis's smallest
+        p-value a factor of 1.7 away from its true value.
+
+        Under the exact test the discordant pairs are the whole sample: given
+        n01 + n10 of them, the null says each one falls either way with
+        probability 0.5, so the two-sided p is twice the smaller tail of a
+        symmetric binomial, capped at 1.
+
+        No chi-square statistic is reported. A reader who recomputed a p-value
+        from a continuity-corrected chi2 would not arrive at the exact p beside
+        it, and a published number nobody can reproduce from its own statistic
+        is worse than no statistic at all. ``method`` is stored so that results
+        collected before this change stay identifiable as approximate.
+        """
         if len(predictions_a) != len(predictions_b):
             raise ValueError("Both prediction lists must have the same length")
 
@@ -41,25 +67,28 @@ class StatisticalTests:
             elif not a_correct and b_correct:
                 n01 += 1
 
-        if n01 + n10 == 0:
+        n_discordant = n01 + n10
+        if n_discordant == 0:
             return {
                 "n01": n01,
                 "n10": n10,
-                "chi2": 0.0,
+                "n_discordant": 0,
                 "p_value": 1.0,
+                "method": StatisticalTests.METHOD_EXACT_BINOMIAL,
                 "significant_at_005": False,
                 "verdict": "Models performed identically on all samples",
             }
 
-        chi2 = (abs(n01 - n10) - 1) ** 2 / (n01 + n10)
         # scipy returns NumPy scalar types; normalize them so experiment
         # reports are always serializable by the standard json module.
-        p_value = float(1 - stats.chi2.cdf(chi2, df=1))
+        smaller_tail = float(stats.binom.cdf(min(n01, n10), n_discordant, 0.5))
+        p_value = min(1.0, 2.0 * smaller_tail)
         return {
             "n01": n01,
             "n10": n10,
-            "chi2": round(chi2, 4),
+            "n_discordant": n_discordant,
             "p_value": round(p_value, 6),
+            "method": StatisticalTests.METHOD_EXACT_BINOMIAL,
             "significant_at_005": bool(p_value < 0.05),
             "verdict": (
                 "Statistically significant difference (p < 0.05)"
