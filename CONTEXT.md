@@ -1575,6 +1575,58 @@ And `gh_scrapy_scrapy_35070733531` shows **no banner** -- its recorded
 `failing_job`, `benchmark-walltime`, has no section in the archive -- so it
 needs the rule below before its annotation can be trusted.
 
+## Remaining work on the thesis document, review of 27 October 2026
+
+A review of the thesis draft recorded its verdict as: **a sound
+methodology-and-pilot draft, whose principal missing academic content is the
+frozen held-out Results, Discussion and Conclusion.** The list below is that
+review's, kept verbatim in substance and grouped by what has to happen first.
+It is the authoritative checklist for the remaining work; nothing here is
+settled by this file, only recorded.
+
+**Still required, in the review's own words:**
+
+- Apply the missing-section rule to the affected cases
+- Complete all 31 held-out annotations
+- Audit the ground-truth records
+- Obtain the final freeze approver's name
+- Create and verify the freeze record
+- Run the held-out evaluation once
+- Score root causes and fixes blindly
+- Rescore the 20-response consistency sample
+- Add a chapter reporting the held-out results
+- Add a Discussion chapter answering the primary question, SRQ1 and SRQ2
+- Add the final Conclusions and Future Work chapter
+- Replace the preliminary abstract wording with final held-out findings
+- Update the table of contents and all Word fields before submission
+
+**The ordering is forced, not a preference.** The first six items are a chain:
+the missing-section rule decides whether two cases are annotatable, annotation
+completes the ground truth, the audit checks it, and the freeze record has to
+name a human approver and verify clean before `final` may run at all. The
+held-out evaluation runs **once** -- that is the whole point of the partition --
+so everything upstream of it must be right before it is invoked. Nothing in the
+last five items can be written honestly until it has.
+
+**Where each item already has machinery.** The audit is
+`./run_workflow.sh audit` over `src/evaluation/ground_truth_audit.py`. The
+freeze record is `./run_workflow.sh freeze ACTION=create APPROVED_BY=<name>`,
+which refuses without a completed pilot, a named approver and the methodology
+approval record -- and has no dry-run, which is why inspecting its gates on
+25 October wrote a real record that had to be deleted. Blind scoring is
+`./run_workflow.sh score SCORER=<id> EXPERIMENT=<dir>`, and the consistency
+sample is the same command with `RESCORE=20`, reported as linear-weighted
+kappa. The held-out run is `./run_workflow.sh final`, **which remains under the
+methodology hold in `AGENTS.md` and must not be run by an agent.**
+
+**The last five items are writing, and no tooling here produces them.** They
+are chapters in the thesis document, including Word field and table-of-contents
+updates, which means they live outside this repository. The two cross-references
+worth carrying into them: `EVALUATION_PLAN.md` §8 still says root cause and fix
+are "reported qualitatively" and contradicts the implemented rubric, and the
+abstract's preliminary wording currently rests on pilot numbers that the
+held-out run will replace.
+
 ## Open decisions
 
 Six, listed in `docs/thesis/EVALUATION_PLAN.md` §10. The ones that block
